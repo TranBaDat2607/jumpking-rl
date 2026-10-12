@@ -211,8 +211,8 @@ Approximations:
 
 - The splat recovery time is an estimate (0.25 s of grounded time) until
   `extract_constants.py` is run.
-- Slope/box precedence at mixed corners follows the parity-tested reference
-  port, not the decompiled original.
+- Slope/box precedence at mixed corners follows the reference contact rules,
+  which were not verified against the decompiled original.
 - On the original map, the babe trigger is a rectangle around her known
   position.
 - Sound, NPCs, ravens, items, cosmetics and the ending cutscene are not

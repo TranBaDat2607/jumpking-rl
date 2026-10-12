@@ -139,6 +139,12 @@ coyote time.
   | right and above | BottomLeft | (−1, 1)/√2 |
   | left and above | BottomRight | (1, 1)/√2 |
 
+- **Mixed contacts**: when the hitbox touches boxes and slopes at once, the
+  slope cell closest in x to the hitbox centre decides. The exception is when a
+  box is at least as high as the highest touched slope and that slope faces
+  upwards; then the contact counts as a flat box contact. This follows the
+  reference contact code in S2.
+
 ## Base game layout
 
 There are 43 screens.

@@ -238,7 +238,12 @@ def _slope_hits(code, cx, cy, hx, hy):
 
 @_jit
 def collide(tiles, offy, hx, hy):
-    """Collision info bit field for the player hitbox at integer (hx, hy)."""
+    """Collision info bit field for the player hitbox at integer (hx, hy).
+
+    Slope selection follows the reference contact rules: the slope cell
+    closest (in x) to the hitbox centre decides, unless a box is at least as
+    high as the highest touched slope and that slope faces upwards, in which
+    case the contact counts as a flat box contact."""
     nrows = tiles.shape[0]
     ncols = tiles.shape[1]
     c0 = hx // 8
@@ -246,14 +251,21 @@ def collide(tiles, offy, hx, hy):
     gy = hy + offy
     r0 = gy // 8
     r1 = (gy + PH - 1) // 8
+    centre = hx + PW // 2
     flags = 0
-    slope = 0
+    closest = 1 << 30
+    closest_slope = 0
+    box_top = 1 << 30
+    slope_top = 1 << 30
+    upper_slope = 0
     for r in range(r0, r1 + 1):
         if r < 0:
             continue
         if r >= nrows:
             # below the bottom of the map: solid floor
             flags |= CI_COLL | CI_BOX
+            if r < box_top:
+                box_top = r
             continue
         for c in range(c0, c1 + 1):
             if c < 0 or c >= ncols:
@@ -261,25 +273,32 @@ def collide(tiles, offy, hx, hy):
             t = tiles[r, c]
             if t == T_EMPTY or t == T_NOWIND or t == T_FAKE:
                 continue
-            if t == T_SOLID:
+            if t == T_SOLID or t == T_ICE or t == T_SNOW:
                 flags |= CI_COLL | CI_BOX
-            elif t == T_ICE:
-                flags |= CI_COLL | CI_BOX | CI_ICE
-            elif t == T_SNOW:
-                flags |= CI_COLL | CI_BOX | CI_SNOW
-            else:
-                if _slope_hits(t, c * 8, r * 8 - offy, hx, gy - offy):
-                    flags |= CI_COLL
-                    if slope == 0:
-                        slope = t
+                if t == T_ICE:
+                    flags |= CI_ICE
+                elif t == T_SNOW:
+                    flags |= CI_SNOW
+                if r < box_top:
+                    box_top = r
+            elif _slope_hits(t, c * 8, r * 8 - offy, hx, gy - offy):
+                flags |= CI_COLL
+                dist = abs(c * 8 + 4 - centre)
+                if dist <= closest:
+                    closest = dist
+                    closest_slope = t
+                if r < slope_top:
+                    slope_top = r
+                    upper_slope = t
+    slope = closest_slope
+    if slope != 0 and box_top <= slope_top and (upper_slope == T_SLOPE_TL or upper_slope == T_SLOPE_TR):
+        slope = 0
     return flags | (slope << CI_SLOPE_SHIFT)
 
 
 @_jit
 def _slope_of(info):
-    """Effective slope code of a collision (boxes take precedence)."""
-    if info & CI_BOX:
-        return 0
+    """Effective slope code of a collision (0 = flat box contact)."""
     return (info >> CI_SLOPE_SHIFT) & 15
 
 
