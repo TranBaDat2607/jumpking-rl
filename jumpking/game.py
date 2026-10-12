@@ -18,7 +18,7 @@ DEFAULT_MACRO_TIMEOUT = 60 * 30  # ticks
 
 
 class Game:
-    def __init__(self, level="builtin", splat_time=C.SPLAT_TIME, wind_scale=1.0,
+    def __init__(self, level="auto", splat_time=C.SPLAT_TIME, wind_scale=1.0,
                  wind_offset=0.0):
         if isinstance(level, str):
             level = Level.load(level)

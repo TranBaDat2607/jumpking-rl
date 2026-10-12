@@ -22,7 +22,7 @@ def main():
     ap.add_argument("--model", help="stable-baselines3 .zip")
     ap.add_argument("--random", action="store_true")
     ap.add_argument("--episodes", type=int, default=10)
-    ap.add_argument("--level", default="builtin")
+    ap.add_argument("--level", default="auto")
     ap.add_argument("--obs", default="vector")
     ap.add_argument("--episode-steps", type=int, default=1000)
     ap.add_argument("--deterministic", action="store_true")

@@ -29,7 +29,7 @@ def cell_of(info, cell_px=48):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--level", default="builtin")
+    ap.add_argument("--level", default="auto")
     ap.add_argument("--iterations", type=int, default=20000)
     ap.add_argument("--explore-steps", type=int, default=12)
     ap.add_argument("--seed", type=int, default=0)

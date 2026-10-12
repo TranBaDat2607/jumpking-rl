@@ -37,7 +37,7 @@ def make_env(rank, args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--level", default="builtin")
+    ap.add_argument("--level", default="auto")
     ap.add_argument("--obs", default="vector", choices=["vector", "grid", "dict"])
     ap.add_argument("--action-mode", default="macro", choices=["macro", "frame"])
     ap.add_argument("--reward", default="height", choices=["height", "max_height", "screen", "sparse"])

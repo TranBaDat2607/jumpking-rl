@@ -28,7 +28,7 @@ from .jump_king_env import VECTOR_FEATURES, vector_features
 class JumpKingVectorEnv(VectorEnv):
     metadata = {"autoreset_mode": AutoresetMode.SAME_STEP, "render_modes": []}
 
-    def __init__(self, num_envs=64, level="builtin", reward="height", goal_bonus=10.0,
+    def __init__(self, num_envs=64, level="auto", reward="height", goal_bonus=10.0,
                  step_penalty=0.0, max_episode_steps=2000, charges=tuple(range(2, 37)),
                  walk_ticks=(4, 8, 16, 32), start="start", max_start_screen=None,
                  wind_phase="random", splat_time=C.SPLAT_TIME, macro_timeout=60 * 20, seed=None):
@@ -42,7 +42,8 @@ class JumpKingVectorEnv(VectorEnv):
         self.step_penalty = float(step_penalty)
         self.max_episode_steps = int(max_episode_steps)
         self.start_mode = start
-        self.max_start_screen = level.n_screens - 1 if max_start_screen is None else int(max_start_screen)
+        self.max_start_screen = (min(level.n_screens, C.BASE_SCREENS) - 1 if max_start_screen is None
+                                 else int(max_start_screen))
         self.wind_phase = wind_phase
         self.macro_timeout = int(macro_timeout)
         table = [(KIND_JUMP, d, c) for d in (-1, 0, 1) for c in charges]

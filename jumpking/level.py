@@ -36,8 +36,13 @@ _IGNORED = {
     (255, 255, 128): "thin snow",
 }
 
+# 0-based screens of the base game inside the original atlas
+IMP_ROOM = 44
+BASE_GAME_SCREENS = tuple(range(C.BASE_SCREENS)) + (IMP_ROOM,)
+
 # babe position on the last base-game screen (screen-local, see RESEARCH.md)
-BASE_GOAL_LOCAL = (370, 112, 402, 146)
+# calibrated so the base-game TAS ending triggers on its last input frame
+BASE_GOAL_LOCAL = (347, 100, 410, 144)
 
 
 def screen_origin_in_atlas(index, cols=C.ATLAS_COLS):
@@ -141,8 +146,13 @@ class Level:
     # ------------------------------------------------------------------ io
     @classmethod
     def from_atlas(cls, rgba, n_screens=C.BASE_SCREENS, name="atlas", goal=None,
-                   start=None, include_linked=False):
-        """Build from an atlas image array (H, W, 4) in the native layout."""
+                   start=None, include=None):
+        """Build from an atlas image array (H, W, 4) in the native layout.
+
+        ``n_screens`` screens (0-based 0..n-1) are loaded and the babe is put on
+        the last of them. ``include`` optionally lists extra / restricted
+        0-based screen indices: screens outside it are loaded empty and side
+        teleports into them are dropped (used to exclude DLC content)."""
         rgba = np.asarray(rgba)
         if rgba.shape[2] == 3:
             alpha = np.full(rgba.shape[:2] + (1,), 255, dtype=rgba.dtype)
@@ -151,45 +161,32 @@ class Level:
         if width % C.SCREEN_TILES_W or height % C.SCREEN_TILES_H:
             raise ValueError("atlas must contain whole 60x45 screens")
         cols = width // C.SCREEN_TILES_W
-        capacity = cols * (height // C.SCREEN_TILES_H)
 
         def screen_image(i):
             x0, y0 = (i // cols) * C.SCREEN_TILES_W, (i % cols) * C.SCREEN_TILES_H
             return rgba[y0:y0 + C.SCREEN_TILES_H, x0:x0 + C.SCREEN_TILES_W]
 
-        parsed = {}
+        keep = set(range(n_screens)) if include is None else set(include)
+        count = max(keep) + 1
         ignored_all = set()
-
-        def parse(i):
-            if i not in parsed:
-                codes, wind, tele, ignored = _classify(screen_image(i))
-                parsed[i] = (resolve_slopes(codes), wind, tele)
-                ignored_all.update(ignored)
-            return parsed[i]
-
-        count = n_screens
-        if include_linked:
-            frontier = list(range(n_screens))
-            seen = set(frontier)
-            while frontier:
-                i = frontier.pop()
-                for _, target in parse(i)[2]:
-                    t = target - 1
-                    if 0 <= t < capacity and t not in seen:
-                        seen.add(t)
-                        frontier.append(t)
-            count = max(seen) + 1
         screens, wind, tl, tr = [], [], [], []
         for i in range(count):
-            codes, w, tele = parse(i)
-            screens.append(codes)
+            if i not in keep:
+                screens.append(np.zeros((C.SCREEN_TILES_H, C.SCREEN_TILES_W), np.int8))
+                wind.append(0)
+                tl.append(-1)
+                tr.append(-1)
+                continue
+            codes, w, tele, ignored = _classify(screen_image(i))
+            ignored_all.update(ignored)
+            screens.append(resolve_slopes(codes))
             wind.append(1 if w else 0)
             left = right = -1
-            targets = [(x, t - 1) for x, t in tele if 0 <= t - 1 < count]
-            dropped = [t for _, t in tele if not 0 <= t - 1 < count]
+            targets = [(x, t - 1) for x, t in tele if (t - 1) in keep]
+            dropped = sorted({t for _, t in tele if (t - 1) not in keep})
             if dropped:
-                warnings.warn("screen %d: teleport to screen(s) %s outside the loaded range"
-                              % (i + 1, sorted(set(dropped))))
+                warnings.warn("screen %d: side teleport to excluded screen(s) %s dropped"
+                              % (i + 1, dropped))
             if targets:
                 distinct = sorted(set(targets))
                 if len({t for _, t in distinct}) == 1:
@@ -201,12 +198,13 @@ class Level:
             tr.append(right)
         if ignored_all:
             warnings.warn("ignored non-base-game blocks: %s" % ", ".join(sorted(ignored_all)))
-        lvl = cls(screens, wind, tl, tr, goal=goal, start=start, name=name)
-        if goal is None and count != n_screens:
+        if goal is None:
             gx0, gy0, gx1, gy1 = BASE_GOAL_LOCAL
             top = world_y_of_screen(n_screens - 1)
-            lvl.goal = (gx0, top + gy0, gx1, top + gy1)
-        return lvl
+            goal = (gx0, top + gy0, gx1, top + gy1)
+        names = [C.area_of_screen(i) if i < C.BASE_SCREENS else
+                 ("Imp Room (secret)" if i == IMP_ROOM else "Excluded") for i in range(count)]
+        return cls(screens, wind, tl, tr, goal=goal, start=start, name=name, area_names=names)
 
     @classmethod
     def from_png(cls, path, **kw):
@@ -238,8 +236,13 @@ class Level:
                             goal=goal, start=start)
 
     @classmethod
-    def original(cls, game_dir=None, include_linked=True):
-        """Original base-game geometry from the local Steam install."""
+    def original(cls, game_dir=None):
+        """Original base-game geometry from the local Steam install.
+
+        Loads screens 1-43 and the hidden Imp Room (screen 45, reached through
+        Bargainburg's side teleport). New Babe+ (46-100), Ghost of the Babe
+        (102-155) and Philosopher's Forest (156-160) are excluded, following
+        Content/gui/location_settings.xml."""
         from .xnb import find_level_xnb
 
         path = find_level_xnb(game_dir)
@@ -247,7 +250,9 @@ class Level:
             raise FileNotFoundError(
                 "Jump King's Content/level.xnb was not found. Install the game "
                 "through Steam (or pass game_dir=...).")
-        return cls.from_xnb(path, n_screens=C.BASE_SCREENS, include_linked=include_linked)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return cls.from_xnb(path, n_screens=C.BASE_SCREENS, include=BASE_GAME_SCREENS)
 
     @classmethod
     def load(cls, source="auto"):

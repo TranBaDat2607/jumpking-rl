@@ -43,7 +43,7 @@ WALK_SPEED = _f32(1.5)
 BOUNCE = _f32(0.5)
 ICE_FRICTION = _f32(0.1)
 AIR_CHARGE_LIMIT = _f32(1.0 / 30.0)
-SPLAT_TIME = _f32(0.25)   # not found in public sources: estimate (configurable)
+SPLAT_TIME = _f32(0.5)    # PlayerValues.get_SPLAT_TIME in JumpKing.exe
 
 # snow: weak jumps are suppressed / boosted
 SNOW_MIN_POWER = _f32(0.2)

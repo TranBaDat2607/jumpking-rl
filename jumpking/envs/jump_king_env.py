@@ -99,7 +99,7 @@ def vector_features(states, level):
 class JumpKingEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array", "human"], "render_fps": C.FPS}
 
-    def __init__(self, level="builtin", action_mode="macro", obs_mode="vector",
+    def __init__(self, level="auto", action_mode="macro", obs_mode="vector",
                  reward="height", goal_bonus=10.0, step_penalty=0.0,
                  max_episode_steps=None, frame_skip=4,
                  charges=tuple(range(2, 37)), walk_ticks=(4, 8, 16, 32),
@@ -120,8 +120,8 @@ class JumpKingEnv(gym.Env):
         self.charges = tuple(int(c) for c in charges)
         self.walk_ticks = tuple(int(t) for t in walk_ticks)
         self.start_mode = start
-        self.max_start_screen = (level.n_screens - 1 if max_start_screen is None
-                                 else int(max_start_screen))
+        self.max_start_screen = (min(level.n_screens, C.BASE_SCREENS) - 1
+                                 if max_start_screen is None else int(max_start_screen))
         self.wind_phase = wind_phase
         self.image_size = tuple(image_size)
         self.macro_timeout = int(macro_timeout)

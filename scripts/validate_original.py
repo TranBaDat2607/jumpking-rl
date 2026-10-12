@@ -22,6 +22,7 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jumpking import constants as C  # noqa: E402
+from jumpking import physics as P  # noqa: E402
 from jumpking import tas  # noqa: E402
 from jumpking.game import Game  # noqa: E402
 from jumpking.level import Level  # noqa: E402
@@ -46,6 +47,9 @@ def main():
     ap.add_argument("--tas")
     ap.add_argument("--download", action="store_true")
     ap.add_argument("--game-dir")
+    ap.add_argument("--start-tick", type=int, default=-2,
+                    help="wind/game clock value when the TAS places the king")
+    ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     if args.tas:
         text = open(args.tas, "r", encoding="utf-8", errors="replace").read()
@@ -84,7 +88,8 @@ def main():
             checked += 1
             actual = game.screen + 1
             status = "ok" if actual == exp else "MISMATCH"
-            print("%-32s expected screen %2d  clone screen %2d  %s" % (name, exp, actual, status))
+            if not args.quiet or actual != exp:
+                print("%-32s expected screen %2d  clone screen %2d  %s" % (name, exp, actual, status))
             if actual == exp:
                 ok += 1
             else:
@@ -95,7 +100,11 @@ def main():
             if seg.state is not None and not started:
                 x, y, facing = seg.state
                 game.reset(x, y)
+                game.state[P.S_TICK] = args.start_tick
                 started = True
+                # JumpKingTAS counts the "@" line as one frame: the state is
+                # applied and the game then runs one tick without input
+                game.step(0, False)
                 continue
             if not started:
                 continue

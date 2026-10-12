@@ -93,7 +93,7 @@ class Viewer:
         return "%d:%02d:%05.2f" % (secs // 3600, (secs % 3600) // 60, secs % 60)
 
 
-def play(level="builtin", scale=2, hz=C.FPS, record_dir="replays"):
+def play(level="auto", scale=2, hz=C.FPS, record_dir="replays"):
     from . import tas
 
     game = Game(level)
