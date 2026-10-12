@@ -80,10 +80,10 @@ All goals are implemented and committed.
   - constant extractor for the user's own `JumpKing.exe`.
 - **Tests**: pytest suite of 55 tests.
 
-Open items need the original game files, which are currently not installed on
-this machine:
+The game was reinstalled from Steam (it had only save files), and the clone is
+now verified against it:
 
-- Run `scripts/validate_original.py --download` for tick-level parity on the
-  real map.
-- Run `scripts/extract_constants.py --write` to replace the estimated
-  `SPLAT_TIME`.
+- the base-game TAS is reproduced tick for tick on the original map;
+- the constants were checked against `JumpKing.exe`, and `SPLAT_TIME` (0.5) was
+  read from it;
+- `level="auto"` uses the original map.

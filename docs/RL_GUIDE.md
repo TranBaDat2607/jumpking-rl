@@ -4,7 +4,7 @@
 
 | argument | default | meaning |
 | --- | --- | --- |
-| `level` | `"builtin"` | `"builtin"`, `"original"` (Steam install), `"auto"`, a `.png`/`.xnb` path, or a `Level` |
+| `level` | `"auto"` | `"auto"` (original if installed, else built-in), `"original"`, `"builtin"`, a `.png`/`.xnb` path, or a `Level` |
 | `action_mode` | `"macro"` | `"macro"` or `"frame"` |
 | `obs_mode` | `"vector"` | `"vector"`, `"grid"`, `"rgb"` or `"dict"` |
 | `reward` | `"height"` | `"height"`, `"max_height"`, `"screen"`, `"sparse"`, or `f(prev_info, info, events) -> float` |
@@ -17,7 +17,7 @@
 | `start` | `"start"` | `"start"`, `"random_screen"`, a screen index, or a list of indices |
 | `max_start_screen` | last screen | upper bound for `"random_screen"` |
 | `wind_phase` | `"random"` | `"random"`, `"zero"`, or a number of seconds added to the wind clock |
-| `splat_time` | `0.25` | splat recovery time (grounded seconds) |
+| `splat_time` | `0.5` | splat recovery time in grounded seconds (the game's value) |
 | `image_size` | `(90, 120)` | `rgb` observation size |
 | `macro_timeout` | `1200` | maximum ticks per macro action |
 | `render_mode` | `None` | `"rgb_array"` or `"human"` |

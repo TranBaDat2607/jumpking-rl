@@ -15,16 +15,29 @@ The physics port follows the original game's per-tick update order and float32
 arithmetic. The source for every constant and rule is in
 [`docs/RESEARCH.md`](docs/RESEARCH.md).
 
+**Verified against the real game.** On the original map from your Steam
+install, the clone replays the community base-game speed-run TAS (3:44.859,
+13,229 inputs) tick for tick: all 42 screen transitions match, and the babe is
+reached on the TAS's final input frame. The constants are checked against
+`JumpKing.exe`. Both checks run in `tests/test_original.py`.
+
 ## Levels
 
 There are two level sources:
 
-- **Original map** (`level="original"`). This is the real base-game geometry,
-  read at runtime from your own Steam install (`Content/level.xnb`). Nothing
-  from the game is copied into this repository.
-- **Built-in map** (`level="builtin"`, the default when the game is not
-  installed). An original 43-screen layout that follows the base game's
-  structure:
+- **Original map** (`level="original"`, the default `"auto"` whenever Jump
+  King is installed). This is the real base-game geometry, read at runtime from
+  your own Steam install (`Content/level.xnb`). Nothing from the game is copied
+  into this repository.
+  - Loaded: screens 1–43 and the hidden Imp Room (screen 45, reached through
+    Bargainburg's side teleport).
+  - Excluded: New Babe+ (screens 46–100), Ghost of the Babe (102–155) and
+    Philosopher's Forest (156–160), following the game's own
+    `location_settings.xml`. The side teleport into Philosopher's Forest is
+    therefore disabled.
+- **Built-in map** (`level="builtin"`, the fallback when the game is not
+  installed). An original 43-screen layout of my own that follows the base
+  game's structure:
 
   | Area | Screens |
   | --- | --- |
@@ -194,8 +207,11 @@ pip install dnfile && python scripts/extract_constants.py --write  # exact Playe
   physics port.
 - `extract_constants.py` reads `JumpKing.PlayerValues` from the executable's
   .NET metadata and IL without running the game. It can write an override file
-  that the engine loads. This settles the one constant not found in public
-  sources: the splat recovery time.
+  that the engine loads (useful if a game update changes values).
+  - It supplied `SPLAT_TIME = 0.5`, the one constant missing from public
+    sources.
+  - It confirmed walk 3×0.5, jump speed 7×0.5, max fall 20×0.5, ice friction
+    0.2×0.5, bounce 0.5, charge 0.6 s and the 18×26 hitbox.
 
 ### From the clone back to the real game
 
@@ -231,16 +247,21 @@ Reproduced from the original:
   rules and no-wind zones.
 - The camera's screen-switch rule, side teleports, and the +1 px ground probe.
 
-Approximations:
+Verification status:
 
-- The splat recovery time is an estimate (0.25 s of grounded time) until
-  `extract_constants.py` is run.
-- Slope/box precedence at mixed corners follows the reference contact rules,
-  which were not verified against the decompiled original.
-- On the original map, the babe trigger is a rectangle around her known
-  position.
-- Sound, NPCs, ravens, items, cosmetics and the ending cutscene are not
-  simulated.
+- The base-game TAS is reproduced tick for tick on the original map. It covers
+  walking, every jump strength used, wall and ceiling bounces, slopes, wind,
+  snow, screen changes and the ending.
+- **Splat recovery** is not exercised by the TAS. I checked it against the
+  disassembled `FailState`: the timer runs only while grounded, and any input
+  stands the king up after 0.5 s.
+- **Ice** (screens 36–39) and **slope/box precedence at mixed corners** are
+  exercised only partly by the TAS. They follow the parity-tested reference
+  port.
+- **The babe trigger** is a rectangle whose left edge is calibrated so the
+  ending fires exactly when the TAS's ending does.
+- **Not simulated**: sound, NPCs, ravens, items, cosmetics and the ending
+  cutscene.
 
 ## Project layout
 

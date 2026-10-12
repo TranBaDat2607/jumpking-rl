@@ -31,7 +31,7 @@ pixels with Y pointing down.
 | `BOUNCE` | 0.5 | S2 (comment: "native walls multiply Vx by −BOUNCE (0.5)") |
 | `ICE_FRICTION` | 0.1 px/tick² | S3 |
 | Wind | `0.1 × wave(t)` px/tick² added to vx | S4 |
-| `SPLAT_TIME` | **not found**; the clone uses 0.25 s of grounded time (configurable) | estimate |
+| `SPLAT_TIME` | 0.5 s of grounded time | `JumpKing.exe` (`PlayerValues.get_SPLAT_TIME`) |
 | Screen | 480 × 360 px = 60 × 45 tiles of 8 px | S5 |
 
 ## Per-tick order
@@ -172,3 +172,47 @@ The clone leaves out all New Babe+ and Ghost of the Babe content, plus:
 - **Blocks**: water, sand, quark.
 - **Items**: Giant Boots, Snake Ring and the other items.
 - **Presentation**: NPCs, ravens and cosmetics.
+
+## Verification against the installed game
+
+With the game installed from Steam (app 1061090), I checked the clone against
+the real files.
+
+- **Constants.** `PlayerValues` in `JumpKing.exe` defines every value as a
+  multiple of `FPS_SCALE = 0.5`:
+
+  | Constant | Value |
+  | --- | --- |
+  | `WALK_SPEED` | 3 × 0.5 |
+  | `SPEED` | 7 × 0.5 |
+  | `MAX_FALL` | 20 × 0.5 |
+  | `ICE_FRICTION` | 0.2 × 0.5 |
+  | `BOUNCE` | 0.5 |
+  | `JUMP_TIME` | 0.6 |
+  | `SPLAT_TIME` | 0.5 |
+  | hitbox | 18 × 26 |
+
+  `GRAVITY` and `JUMP` are derived from a jump height. `MAX_SLIDE` exists but
+  nothing in the game uses it.
+- **Splat.** The disassembled `FailState.MyRun` matches the splat rules above.
+- **Map layout.** `Content/gui/location_settings.xml` maps screens to areas:
+
+  | Content | Screens |
+  | --- | --- |
+  | Base game | 1–43 |
+  | New Babe+ | 47–100 |
+  | Philosopher's Forest | 157–160 |
+  | Ghost of the Babe | 102–155 |
+
+  - Screen 45 is the hidden Imp Room. It has the `FIND_IMP_ROOM` achievement
+    and a side teleport to and from screen 18.
+  - Base-game wind appears on screens 26–32, snow on 26–31 and ice on 36–39.
+- **TAS parity.** The community base-game TAS (ShootMe/JumpKingTAS
+  `NewGame.tas`, 3:44.859) reproduces tick for tick:
+  - every one of the 42 screen sections lands on the expected screen;
+  - the run lasts 13,229 inputs × 17 ms = 224.89 s.
+
+  Two details of the TAS tool matter for this. Its `@` line lasts one frame,
+  and its `X` reset leaves the run clock at −2 ticks. The babe trigger was
+  calibrated from the TAS ending: the king's hitbox reaching x ≥ 347 on the
+  top platform of screen 43.
