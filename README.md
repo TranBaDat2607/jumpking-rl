@@ -94,9 +94,9 @@ snap = g.snapshot(); g.restore(snap)             # O(1) save/restore
 
 ```python
 import gymnasium as gym
-import jumpking.envs
 
-env = gym.make("JumpKing-v0")                    # macro actions, vector obs
+env = gym.make("jumpking.envs:JumpKing-v0")      # macro actions, vector obs
+# (or `import jumpking.envs` once, then gym.make("JumpKing-v0"))
 obs, info = env.reset(seed=0)
 obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
 ```
@@ -107,6 +107,12 @@ obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
 | `JumpKingGrid-v0` | macro | tile grid `uint8 (3, 90, 60)` |
 | `JumpKingFrame-v0` | per-frame buttons: `Discrete(6)` | vector |
 | `JumpKingPixels-v0` | per-frame buttons | RGB `(90, 120, 3)` |
+
+For maximum throughput, `jumpking.envs.vector.JumpKingVectorEnv` is a
+natively batched `gymnasium.vector.VectorEnv`: all kings are advanced by one
+multi-threaded numba call. `SB3VecEnv` exposes it to stable-baselines3, and
+`jumpking.batch.BatchSim` is the raw batched simulator for genetic
+algorithms, ES or MCTS.
 
 All options are constructor arguments of `jumpking.envs.JumpKingEnv`; see
 [`docs/RL_GUIDE.md`](docs/RL_GUIDE.md). In short:
@@ -147,11 +153,13 @@ Measured on one core of an Intel i7 (12 threads):
 | Macro actions | ≈ 85 k/s |
 | `JumpKing-v0` env steps | ≈ 50 k/s |
 | Pixel env steps | ≈ 10 k/s |
+| `JumpKingVectorEnv`, 512 kings, all cores | ≈ 640 k/s |
+| PPO (SB3) on the batched env | ≈ 24 k/s |
 
 ## Training and evaluation
 
 ```bash
-python scripts/train_ppo.py --timesteps 5e6 --n-envs 8 --subproc   # PPO (SB3), logs to runs/
+python scripts/train_ppo.py --timesteps 5e6 --n-envs 64            # PPO (SB3) on the batched env, logs to runs/
 python scripts/train_ppo.py --obs grid --curriculum --timesteps 1e7
 tensorboard --logdir runs
 python scripts/evaluate.py --model runs/<name>/final_model.zip --episodes 20

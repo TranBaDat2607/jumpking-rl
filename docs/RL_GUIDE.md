@@ -150,13 +150,38 @@ timing.
 - **Custom rewards** can use `prev_info`, `info` and `events`, for example
   `-0.01 if events & EV_SPLAT else 0`.
 
+## Batched simulation
+
+**`jumpking.envs.vector.JumpKingVectorEnv(num_envs=N, ...)`** is a
+`gymnasium.vector.VectorEnv` with macro actions and vector observations.
+
+- It takes the same reward, curriculum and wind options as `JumpKingEnv`.
+- One step advances all N kings in a single multi-threaded numba call:
+  about 640k steps/s with N = 512.
+- Finished sub-envs are reset in the same step. Their last observation is in
+  `infos["final_obs"]`.
+- `get_states()` / `set_states()` expose the `(N, STATE_SIZE)` state array.
+
+**`jumpking.envs.vector.SB3VecEnv`** is the same environment as a
+stable-baselines3 `VecEnv`. `scripts/train_ppo.py` uses it by default.
+
+**`jumpking.batch.BatchSim(level, n)`** is the raw backend:
+
+- `macro(kinds, dirs, vals)` applies one macro action per king.
+- `frames(dirs, jumps, repeat)` holds buttons on every king.
+- `heights`, `screens` and `done` are vectorized queries.
+
+It suits population methods.
+
 ## Performance tips
 
 - Prefer macro actions with vector or grid observations for learning. Use
   frame mode for research on low-level control.
-- Use `gym.make_vec("JumpKing-v0", num_envs=N, vectorization_mode="async")`,
-  or SB3's `SubprocVecEnv`. Simulation is rarely the bottleneck: a single
-  process does about 50k env steps/s.
+- Prefer `JumpKingVectorEnv` / `SB3VecEnv` for vector observations. With a
+  simulator this fast, inter-process communication costs more than the
+  simulation itself, so async/subprocess vector envs are slower: about 17k
+  steps/s with 8 processes. Use them only for pixel or grid observations, where
+  rendering dominates.
 - The first import JIT-compiles the kernel (a few seconds). numba caches the
   result in `jumpking/__pycache__`.
 - Curriculum: train with `start="random_screen"` and raise

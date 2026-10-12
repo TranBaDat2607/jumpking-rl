@@ -125,6 +125,17 @@ def cmd_benchmark(a):
         if term or trunc:
             env.reset()
     print("env steps/s     : %.0f (JumpKing-v0, single process)" % (k / (time.perf_counter() - t)))
+    from .envs.vector import JumpKingVectorEnv
+
+    v = JumpKingVectorEnv(num_envs=512, level=g.level, seed=0)
+    v.reset(seed=0)
+    v.step(v.action_space.sample())
+    t = time.perf_counter()
+    k = 0
+    while time.perf_counter() - t < a.seconds:
+        v.step(v.action_space.sample())
+        k += v.num_envs
+    print("batched steps/s : %.0f (JumpKingVectorEnv, 512 kings, numba threads)" % (k / (time.perf_counter() - t)))
 
 
 def cmd_solve(a):

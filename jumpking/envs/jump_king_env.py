@@ -53,8 +53,45 @@ VECTOR_FEATURES = (
 )
 
 
-def _height_reward(prev, info, events, total):
-    return (info["height"] - prev["height"]) / C.SCREEN_H
+def wind_force(ticks, offsets, scale=1.0):
+    """Vectorised numpy port of physics.wind_velocity (float32 like the game)."""
+    f = np.float32
+    seconds = ticks * C.TARGET_ELAPSED_SECONDS + offsets
+    t = (np.floor(seconds * 1000.0 + 0.5) / 1000.0).astype(f)
+    phase = (t * f(C.WIND_PHASE_RATE)).astype(f)
+    wave = np.sin(phase).astype(f)
+    wave = np.where(np.cos(phase).astype(f) > 0, wave * f(2) + f(1), wave * f(2) - f(1))
+    wave = np.clip(wave, -1.0, 1.0).astype(f)
+    return (wave * f(C.WIND_STRENGTH) * f(scale)).astype(np.float64)
+
+
+def vector_features(states, level):
+    """Observation vectors (N, len(VECTOR_FEATURES)) for a batch of states."""
+    s = np.atleast_2d(states)
+    screen = s[:, P.S_SCREEN].astype(np.int64)
+    top = -C.SCREEN_H * screen
+    n = max(1, level.n_screens - 1)
+    total = float(C.SCREEN_H * level.n_screens)
+    has_wind = level.wind[screen].astype(np.float64)
+    wind = has_wind * wind_force(s[:, P.S_TICK], s[:, P.S_WIND_OFFSET])
+    t = s[:, P.S_TICK] * C.TARGET_ELAPSED_SECONDS + s[:, P.S_WIND_OFFSET]
+    phase = t * C.WIND_PHASE_RATE
+    height = C.SCREEN_H - (s[:, P.S_Y].astype(np.int64) + C.PLAYER_H)
+    max_height = C.SCREEN_H - s[:, P.S_MAX_HEIGHT]
+    cols = [
+        s[:, P.S_X] / C.SCREEN_W,
+        (s[:, P.S_Y] - top) / C.SCREEN_H,
+        s[:, P.S_VX] / C.MAX_FALL,
+        s[:, P.S_VY] / C.MAX_FALL,
+        screen / n,
+        s[:, P.S_ON_GROUND], s[:, P.S_KNOCKED], s[:, P.S_ON_ICE], s[:, P.S_ON_SNOW],
+        s[:, P.S_CHARGING], s[:, P.S_CHARGE] / C.JUMP_TIME, s[:, P.S_SPLAT],
+        wind / C.WIND_STRENGTH, s[:, P.S_WIND_LATCH], s[:, P.S_FACING],
+        height / total, max_height / total,
+        s[:, P.S_JUMP_HELD], (s[:, P.S_X] % 8) / 8.0, has_wind,
+        has_wind * np.sin(phase), has_wind * np.cos(phase),
+    ]
+    return np.stack(cols, axis=1).astype(np.float32)
 
 
 class JumpKingEnv(gym.Env):
@@ -150,29 +187,7 @@ class JumpKingEnv(gym.Env):
         return out
 
     def _vector_obs(self):
-        s = self.game.state
-        screen = int(s[P.S_SCREEN])
-        top = -C.SCREEN_H * screen
-        n = max(1, self.level.n_screens - 1)
-        wind = self.game.wind()
-        total = float(self.game.total_height)
-        has_wind = float(self.level.wind[screen])
-        t = s[P.S_TICK] * C.TARGET_ELAPSED_SECONDS + s[P.S_WIND_OFFSET]
-        phase = t * C.WIND_PHASE_RATE
-        v = np.array([
-            s[P.S_X] / C.SCREEN_W,
-            (s[P.S_Y] - top) / C.SCREEN_H,
-            s[P.S_VX] / C.MAX_FALL,
-            s[P.S_VY] / C.MAX_FALL,
-            screen / n,
-            s[P.S_ON_GROUND], s[P.S_KNOCKED], s[P.S_ON_ICE], s[P.S_ON_SNOW],
-            s[P.S_CHARGING], s[P.S_CHARGE] / C.JUMP_TIME, s[P.S_SPLAT],
-            wind / C.WIND_STRENGTH, s[P.S_WIND_LATCH], s[P.S_FACING],
-            self.game.height / total, self.game.max_height / total,
-            s[P.S_JUMP_HELD], (s[P.S_X] % 8) / 8.0, has_wind,
-            has_wind * np.sin(phase), has_wind * np.cos(phase),
-        ], dtype=np.float32)
-        return v
+        return vector_features(self.game.state, self.level)[0]
 
     def _grid_obs(self):
         s = self.game.state

@@ -50,7 +50,8 @@ def _invalidate_stale_cache():
                 return
     except OSError:
         pass
-    for f in glob.glob(os.path.join(cache_dir, "physics.*.nb[ic]")):
+    # every cached kernel of the package may have inlined the old values
+    for f in glob.glob(os.path.join(cache_dir, "*.nb[ic]")):
         try:
             os.remove(f)
         except OSError:

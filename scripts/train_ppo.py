@@ -47,7 +47,8 @@ def main():
     ap.add_argument("--max-start-screen", type=int, default=None)
     ap.add_argument("--timesteps", type=float, default=1e6)
     ap.add_argument("--n-envs", type=int, default=8)
-    ap.add_argument("--subproc", action="store_true", help="use one process per env")
+    ap.add_argument("--vec", default="auto", choices=["auto", "batched", "dummy", "subproc"],
+                    help="batched = native numba batch (vector obs + macro only, fastest)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="runs")
     ap.add_argument("--name", default=None)
@@ -61,8 +62,19 @@ def main():
     run_dir = os.path.join(args.out, name)
     os.makedirs(run_dir, exist_ok=True)
 
-    fns = [make_env(i, args) for i in range(args.n_envs)]
-    venv = SubprocVecEnv(fns) if args.subproc else DummyVecEnv(fns)
+    vec = args.vec
+    if vec == "auto":
+        vec = "batched" if (args.obs == "vector" and args.action_mode == "macro") else "dummy"
+    if vec == "batched":
+        from jumpking.envs.vector import SB3VecEnv
+
+        venv = SB3VecEnv(num_envs=args.n_envs, level=args.level, reward=args.reward,
+                         step_penalty=args.step_penalty, max_episode_steps=args.episode_steps,
+                         start="random_screen" if args.curriculum else "start",
+                         max_start_screen=args.max_start_screen, seed=args.seed)
+    else:
+        fns = [make_env(i, args) for i in range(args.n_envs)]
+        venv = SubprocVecEnv(fns) if vec == "subproc" else DummyVecEnv(fns)
     venv = VecMonitor(venv)
 
     class ProgressCallback(BaseCallback):
