@@ -112,7 +112,7 @@ def test_goal_terminates_episode():
 def test_vector_env():
     envs = gym.make_vec("JumpKing-v0", num_envs=4, vectorization_mode="sync")
     obs, info = envs.reset(seed=0)
-    assert obs.shape == (4, 20)
+    assert obs.shape == (4, len(jumpking.envs.VECTOR_FEATURES))
     obs, r, term, trunc, info = envs.step(envs.action_space.sample())
     assert r.shape == (4,)
     envs.close()

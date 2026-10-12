@@ -49,6 +49,7 @@ VECTOR_FEATURES = (
     "x", "y_in_screen", "vx", "vy", "screen", "on_ground", "knocked", "on_ice",
     "on_snow", "charging", "charge", "splat", "wind", "wind_active", "facing",
     "height", "max_height", "jump_held", "x_tile_frac", "screen_has_wind",
+    "wind_phase_sin", "wind_phase_cos",
 )
 
 
@@ -155,6 +156,9 @@ class JumpKingEnv(gym.Env):
         n = max(1, self.level.n_screens - 1)
         wind = self.game.wind()
         total = float(self.game.total_height)
+        has_wind = float(self.level.wind[screen])
+        t = s[P.S_TICK] * C.TARGET_ELAPSED_SECONDS + self.game.params[P.P_WIND_OFFSET]
+        phase = t * C.WIND_PHASE_RATE
         v = np.array([
             s[P.S_X] / C.SCREEN_W,
             (s[P.S_Y] - top) / C.SCREEN_H,
@@ -165,7 +169,8 @@ class JumpKingEnv(gym.Env):
             s[P.S_CHARGING], s[P.S_CHARGE] / C.JUMP_TIME, s[P.S_SPLAT],
             wind / C.WIND_STRENGTH, s[P.S_WIND_LATCH], s[P.S_FACING],
             self.game.height / total, self.game.max_height / total,
-            s[P.S_JUMP_HELD], (s[P.S_X] % 8) / 8.0, float(self.level.wind[screen]),
+            s[P.S_JUMP_HELD], (s[P.S_X] % 8) / 8.0, has_wind,
+            has_wind * np.sin(phase), has_wind * np.cos(phase),
         ], dtype=np.float32)
         return v
 
