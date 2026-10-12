@@ -1,295 +1,281 @@
-# Jump King clone for reinforcement learning
+<div align="center">
 
-A clone of the **base game** of *Jump King* (Nexile, 2019), without New Babe+,
-Ghost of the Babe or items. It is built for reinforcement-learning research:
+# jumpking-rl
 
-- a deterministic headless simulator that runs about 70,000× faster than real time;
-- complete game-state observation and programmatic control;
-- O(1) save and restore of the full state;
-- Gymnasium environments;
-- training, evaluation and exploration tooling.
+**A tick-exact *Jump King* simulator for reinforcement learning.**
 
-![screenshot](docs/images/screenshot.png)
+Headless, deterministic and about 70,000× faster than real time, with
+Gymnasium environments, batched simulation and O(1) save/restore. It is
+**verified frame-for-frame against the original game.**
 
-The physics port follows the original game's per-tick update order and float32
-arithmetic. The source for every constant and rule is in
-[`docs/RESEARCH.md`](docs/RESEARCH.md).
+[![CI](https://github.com/TranBaDat2607/jumpking-rl/actions/workflows/ci.yml/badge.svg)](https://github.com/TranBaDat2607/jumpking-rl/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
+[![Gymnasium](https://img.shields.io/badge/Gymnasium-1.x-0081A5)](https://gymnasium.farama.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-60%20passing-brightgreen)](tests)
 
-**Verified against the real game.** On the original map from your Steam
-install, the clone replays the community base-game speed-run TAS (3:44.859,
-13,229 inputs) tick for tick: all 42 screen transitions match, and the babe is
-reached on the TAS's final input frame. The constants are checked against
-`JumpKing.exe`. Both checks run in `tests/test_original.py`.
+<img src="docs/images/demo.gif" width="480" alt="The king climbing Redcrown Woods">
 
-## Levels
+[Quick start](#quick-start) •
+[Environments](#environments) •
+[Fidelity](#fidelity-verified-against-the-real-game) •
+[Benchmarks](#performance) •
+[Baselines](#baselines) •
+[Docs](docs/RL_GUIDE.md)
 
-There are two level sources:
+</div>
 
-- **Original map** (`level="original"`, the default `"auto"` whenever Jump
-  King is installed). This is the real base-game geometry, read at runtime from
-  your own Steam install (`Content/level.xnb`). Nothing from the game is copied
-  into this repository.
-  - Loaded: screens 1–43 and the hidden Imp Room (screen 45, reached through
-    Bargainburg's side teleport).
-  - Excluded: New Babe+ (screens 46–100), Ghost of the Babe (102–155) and
-    Philosopher's Forest (156–160), following the game's own
-    `location_settings.xml`. The side teleport into Philosopher's Forest is
-    therefore disabled.
-- **Built-in map** (`level="builtin"`, the fallback when the game is not
-  installed). An original 43-screen layout of my own that follows the base
-  game's structure:
+---
 
-  | Area | Screens |
+*Jump King* is a notoriously hard platformer. You charge a jump, release it,
+and live with the consequences: one bad jump can undo ten minutes of
+progress. That makes it a natural **hard-exploration benchmark**, but the real
+game cannot be run headless, reset to a chosen state or stepped
+deterministically.
+
+**jumpking-rl** reimplements the base game's physics tick by tick, in float32
+exactly like the original, and wraps it in a research-friendly API.
+
+## Highlights
+
+- **Verified fidelity.** It replays a community speed-run of the real game
+  (3:44.859, 13,229 inputs) tick for tick on the original map. All 42 screen
+  transitions match, and the ending triggers on the final input.
+- **Fast.**
+
+  | Workload | Rate |
   | --- | --- |
-  | Redcrown Woods | 1–5 |
-  | Colossal Drain | 6–10 |
-  | False King's Keep | 11–14 |
-  | Bargainburg | 15–19 |
-  | Great Frontier | 20–25 |
-  | Windswept Bluff (wind) | 26 |
-  | Stormwall Pass (wind and snow) | 27–32 |
-  | Chapel Perilous | 33–36 |
-  | Blue Ruin (ice) | 37–39 |
-  | The Tower (the babe on top) | 40–43 |
+  | Game ticks, one core | 4.2 M/s |
+  | Batched macro steps, 512 kings, all cores | ~640 k/s |
 
-  The map was grown by the physics engine itself, so it is solvable by
-  construction. A verified solution is stored with it.
-
-![map](docs/images/map.png)
-
-## Install
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate            # Windows  (source .venv/bin/activate elsewhere)
-pip install -e ".[dev]"           # core + pygame + pytest
-pip install -e ".[train]"         # optional: torch + stable-baselines3
-```
-
-Requirements: Python ≥ 3.9, numpy, numba (JIT), gymnasium, pillow. pygame is
-needed only for the window.
+- **The real map from your own copy.** The original level is read at
+  runtime from your Steam install. No game assets are distributed. Without
+  the game, a built-in 43-screen map is used instead; it is verified solvable.
+- **Gymnasium-native.**
+  - Macro actions (a whole jump per step) or per-frame button presses.
+  - Vector, tile-grid, RGB or dict observations.
+  - Pluggable rewards and curriculum starts.
+  - A batched `VectorEnv` and a stable-baselines3 adapter.
+- **O(1) state save/restore.** The whole game is a 37-float vector, ideal for
+  Go-Explore, MCTS, search and demonstrations.
+- **Human-playable.** A pygame front end, plus `.tas` recordings compatible
+  with the real game's TAS tool.
 
 ## Quick start
 
 ```bash
-jumpking play                  # play with the keyboard (arrows/A-D + Space)
-jumpking demo                  # watch the verified solution of the built-in map
-jumpking info                  # numba status, game install, level summary
-jumpking benchmark             # simulation speed
-jumpking preview --out map.png # render the map
-jumpking replay run.tas        # watch a recording (JumpKingTAS format)
+git clone https://github.com/TranBaDat2607/jumpking-rl
+cd jumpking-rl
+pip install -e ".[dev]"            # add ".[train]" for torch + stable-baselines3
+
+jumpking play                      # play it yourself: arrows + Space
+jumpking demo                      # watch a verified solution of the built-in map
+jumpking info                      # is your Steam copy detected? is numba on?
 ```
-
-In-game keys:
-
-| Key | Action |
-| --- | --- |
-| R | restart |
-| F1 | debug overlay |
-| F2 | record a `.tas` file to `replays/` |
-| F5 / F9 | save / load a practice state |
-| PageUp / PageDown | change screen |
-
-### Python API
-
-```python
-from jumpking import Game
-
-g = Game("builtin")              # or "original", "auto", or a path to .png/.xnb
-g.step(direction=1, jump=False)  # one 60 Hz tick of button input
-events, ticks = g.jump(direction=-1, charge=36)  # full jump left, waits for landing
-events, ticks = g.walk(direction=1, ticks=16)
-print(g.info())                  # x, y, vx, vy, screen, area, height, flags, wind, ...
-snap = g.snapshot(); g.restore(snap)             # O(1) save/restore
-```
-
-### Gymnasium
 
 ```python
 import gymnasium as gym
 
-env = gym.make("jumpking.envs:JumpKing-v0")      # macro actions, vector obs
-# (or `import jumpking.envs` once, then gym.make("JumpKing-v0"))
+env = gym.make("jumpking.envs:JumpKing-v0")
 obs, info = env.reset(seed=0)
-obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+for _ in range(1000):
+    obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+    if terminated or truncated:
+        obs, info = env.reset()
+print(info["screen"], info["max_height"])
 ```
 
-| id | actions | observation |
+Low-level control is available too:
+
+```python
+from jumpking import Game
+
+g = Game()                                  # original map if installed, else built-in
+g.step(direction=1, jump=False)             # one 60 Hz tick of button input
+events, ticks = g.jump(direction=-1, charge=36)   # full-power jump left, waits for landing
+snap = g.snapshot(); g.restore(snap)        # bit-exact save / restore
+```
+
+## Environments
+
+| id | action space | observation |
 | --- | --- | --- |
-| `JumpKing-v0` | macro: `Discrete(113)` | vector (22 floats) |
-| `JumpKingGrid-v0` | macro | tile grid `uint8 (3, 90, 60)` |
-| `JumpKingFrame-v0` | per-frame buttons: `Discrete(6)` | vector |
-| `JumpKingPixels-v0` | per-frame buttons | RGB `(90, 120, 3)` |
+| `JumpKing-v0` | macro, `Discrete(113)`: 3 directions × 35 charge levels + 8 walks | vector, `float32 (22,)` |
+| `JumpKingGrid-v0` | macro | tile grid, `uint8 (3, 90, 60)` |
+| `JumpKingFrame-v0` | per-frame buttons, `Discrete(6)` | vector |
+| `JumpKingPixels-v0` | per-frame buttons | RGB, `uint8 (90, 120, 3)` |
 
-For maximum throughput, `jumpking.envs.vector.JumpKingVectorEnv` is a
-natively batched `gymnasium.vector.VectorEnv`: all kings are advanced by one
-multi-threaded numba call. `SB3VecEnv` exposes it to stable-baselines3, and
-`jumpking.batch.BatchSim` is the raw batched simulator for genetic
-algorithms, ES or MCTS.
+- **Rewards**: `height` (potential-based), `max_height`, `screen`, `sparse`,
+  or your own callable. Optional goal bonus and step penalty.
+- **Curriculum**: `start="random_screen"`, a list of screens, or
+  `reset(options={"screen": k})` / `{"state": snapshot}`.
+- **Info dict**: full state, event flags (jump, land, splat, bump, screen
+  up/down, goal) and the game ticks consumed.
+- **Batched**: `jumpking.envs.vector.JumpKingVectorEnv(num_envs=512)` and
+  `SB3VecEnv` advance every king in one multi-threaded numba call.
+  `jumpking.batch.BatchSim` exposes the raw batched simulator for genetic
+  algorithms, ES or MCTS.
 
-All options are constructor arguments of `jumpking.envs.JumpKingEnv`; see
-[`docs/RL_GUIDE.md`](docs/RL_GUIDE.md). In short:
+Every option is documented in **[docs/RL_GUIDE.md](docs/RL_GUIDE.md)**.
 
-- **Actions**
-  - `macro`: one action is a whole jump (direction × charge ticks 2–36, where
-    power = charge/36) or a short walk. The simulation runs until the king
-    stands still again, which makes episodes about 100× shorter.
-  - `frame`: noop, left, right, jump, jump+left, jump+right, held for
-    `frame_skip` ticks. This is exactly the real game's input model.
-- **Observations**
-  - `vector`: position, velocity, ground/ice/snow/splat flags, charge, wind
-    force and phase, height.
-  - `grid`: terrain and special surfaces for the current and next screen,
-    plus the player.
-  - `rgb` and `dict` are also available.
-- **Rewards**
-  - `height`: potential-based change in height.
-  - `max_height`: new records only.
-  - `screen`: +1 per new screen, −1 per screen fallen.
-  - `sparse`: goal only.
-  - Or pass any callable. A goal bonus applies on reaching the babe, and an
-    optional per-step penalty is available.
-- **Curriculum**: `start="random_screen"` (with `max_start_screen`), a list of
-  screens, or `reset(options={"screen": k})` / `{"state": snapshot}`.
-- **Search, Go-Explore and demonstrations**: `env.get_state()` and
-  `env.set_state(s)`.
-- **Info**: every step returns the full state, the event flags (jump, land,
-  splat, bump, screen up/down, goal) and the ticks used.
-- **Vectorization**: works with `gym.make_vec(..., vectorization_mode="async")`
-  or SB3's `SubprocVecEnv`.
+## Fidelity: verified against the real game
 
-Measured on one core of an Intel i7 (12 threads):
+The physics engine ports the original per-tick pipeline:
 
-| Measurement | Rate |
+1. wind;
+2. X move, then cap or teleport, then X collision with pixel back-off;
+3. Y move (with the +1 px ground probe), then Y collision;
+4. gravity;
+5. materials;
+6. controls;
+7. camera.
+
+All arithmetic is float32. Every constant and rule is sourced in
+**[docs/RESEARCH.md](docs/RESEARCH.md)**.
+
+With the game installed, three checks run automatically in
+`tests/test_original.py`:
+
+| Check | Result |
 | --- | --- |
-| Game ticks | ≈ 4.2 M/s (70,000× real time) |
-| Macro actions | ≈ 85 k/s |
-| `JumpKing-v0` env steps | ≈ 50 k/s |
-| Pixel env steps | ≈ 10 k/s |
-| `JumpKingVectorEnv`, 512 kings, all cores | ≈ 640 k/s |
-| PPO (SB3) on the batched env | ≈ 24 k/s |
+| Base-game TAS ([ShootMe/JumpKingTAS](https://github.com/ShootMe/JumpKingTAS) `NewGame.tas`) replayed on the real map | 42 / 42 screen sections, babe reached on the final input |
+| Run length vs. the recorded 3:44.859 | 224.89 s, within 2 frames |
+| `PlayerValues` read from your `JumpKing.exe` | walk 1.5, jump 3.5, max fall 10, bounce 0.5, charge 0.6 s, splat 0.5 s, hitbox 18×26 |
 
-## Training and evaluation
+You can run the same checks by hand:
 
 ```bash
-python scripts/train_ppo.py --timesteps 5e6 --n-envs 64            # PPO (SB3) on the batched env, logs to runs/
-python scripts/train_ppo.py --obs grid --curriculum --timesteps 1e7
-tensorboard --logdir runs
-python scripts/evaluate.py --model runs/<name>/final_model.zip --episodes 20
-python scripts/evaluate.py --model runs/<name>/final_model.zip --watch
-python scripts/evaluate.py --random --episodes 50                   # baseline
-python examples/go_explore.py --save-tas best.tas                   # beats the built-in map in ~1 minute
+python scripts/validate_original.py --download     # tick-level parity report
+python scripts/extract_constants.py                # constants from your JumpKing.exe
 ```
 
-Reference results on the built-in map:
+**Scope.** Only the base game is loaded: screens 1–43 and the hidden Imp
+Room. New Babe+, Ghost of the Babe, Philosopher's Forest, items, NPCs, sound
+and the ending cutscene are out of scope.
 
-- **Random agent**: about 1–2 screens.
-- **PPO, 300k steps (34 s)**: mean height reward rises from 0.07 to 0.57 per
-  episode.
-- **Go-Explore with state restore**: reaches the babe after about 42k
-  iterations (46 s).
+## Performance
 
-Reference results on the **original** base-game map:
+Measured on an Intel Core i7 (12 threads), Windows 11, Python 3.13:
 
-- **Go-Explore**: beats the whole game in 120 s (110k iterations, 245 macro
-  actions). The exported `.tas` reaches the babe in 13,878 ticks (3:55.9 of
-  game time), compared with 3:44.9 for the human-made TAS. Along the way it
-  found the hidden Imp Room.
-- **PPO, batched env (64 kings)**: about 32k steps/s. In a 14-second run the
-  mean episode reward rose from 0.01 to 0.18, with a best height on screen 3.
+| Workload | Throughput |
+| --- | --- |
+| Raw game ticks, one core | **4.2 M ticks/s** (≈70,000× real time) |
+| Macro actions (full jumps), one core | 85 k/s |
+| `JumpKing-v0`, single env | 50 k steps/s |
+| `JumpKingVectorEnv`, 512 kings, all cores | **640 k steps/s** |
+| PPO (stable-baselines3) end to end | 24–32 k steps/s |
 
-## Using your original game
+Run `jumpking benchmark` to measure your own machine.
 
-Install Jump King from Steam; the clone finds it through the Steam library
-folders, or through `JUMPKING_GAME_DIR`.
+## Baselines
+
+| Agent | Map | Result |
+| --- | --- | --- |
+| Random macro actions | original / built-in | screens 1–2 |
+| PPO, 14 s of training | original | mean return 0.01 → 0.18; best height screen 3 |
+| **Go-Explore** (`examples/go_explore.py`) | **original** | **beats the game in 120 s**: 245 macro actions, 3:55.9 of game time; finds the hidden Imp Room |
+| Go-Explore | built-in | beats the map in 46 s |
+
+The PPO row only shows that the training pipeline works. Solving Jump King
+with RL alone remains an open challenge.
 
 ```bash
-jumpking info                                   # should show "original map: ...\Content\level.xnb"
-jumpking play --level original
-python scripts/validate_original.py --download  # replay the community base-game TAS on the real map
-pip install dnfile && python scripts/extract_constants.py --write  # exact PlayerValues from your JumpKing.exe
+python scripts/train_ppo.py --timesteps 5e6 --n-envs 64     # PPO on the batched env, TensorBoard in runs/
+python scripts/evaluate.py --model runs/<name>/final_model.zip --episodes 20 --save-tas best.tas
+python examples/go_explore.py --save-tas route.tas          # exploration with state restore
+jumpking replay route.tas                                   # watch any recording
 ```
 
-- `validate_original.py` replays [ShootMe/JumpKingTAS](https://github.com/ShootMe/JumpKingTAS)'
-  `NewGame.tas` tick for tick. Section by section, it reports whether the king
-  is on the screen the real game reaches, which is an end-to-end check of the
-  physics port.
-- `extract_constants.py` reads `JumpKing.PlayerValues` from the executable's
-  .NET metadata and IL without running the game. It can write an override file
-  that the engine loads (useful if a game update changes values).
-  - It supplied `SPLAT_TIME = 0.5`, the one constant missing from public
-    sources.
-  - It confirmed walk 3×0.5, jump speed 7×0.5, max fall 20×0.5, ice friction
-    0.2×0.5, bounce 0.5, charge 0.6 s and the 18×26 hitbox.
+## Maps
 
-### From the clone back to the real game
+| Map | How to use | Notes |
+| --- | --- | --- |
+| **Original** | `level="original"` (default when installed) | Read from `Steam/steamapps/common/Jump King/Content/level.xnb`. Requires owning the game. |
+| **Built-in** | `level="builtin"` (fallback) | Original 43-screen layout following the base game's areas. Generated by the physics engine itself, so solvable by construction; the verified route is stored. |
+| **Custom** | `level="path/to/level.png"` | Any map in the native 780×585 hitbox-atlas format, e.g. from workshop tools. |
 
-`.tas` files written by the clone use the JumpKingTAS format: an `@x,y,dir`
-start line plus `frames,L/R/J` input lines. The clone's extra `#!state` line
-is a comment that other tools ignore. A route found on the original map, by
-an agent, the solver or Go-Explore, can therefore be played back in the real
-game with ShootMe's TAS tool.
+<details>
+<summary>Built-in map overview</summary>
 
-Keep in mind:
+![built-in map](docs/images/map.png)
 
-- The real game's wind phase depends on its in-game timer. On wind screens
-  (26–32), start the recording from a fresh run (TAS `X` reset) so the timing
-  matches.
-- `scripts/validate_original.py` shows how closely the two simulations agree
-  on your installed version.
+</details>
 
-## Fidelity notes
+## CLI
 
-Reproduced from the original:
-
-- 18×26 hitbox and integer-truncated collision.
-- X-then-Y resolution with pixel back-off.
-- Wall bounce (−0.5·vx) and ceiling bump (0.5·vx).
-- 45° slopes with velocity projection.
-- Gravity 0.2571429 and max fall 10.
-- Charge 0.6 s, giving power = charge/36.
-- Jump speed 3.5 and walk speed 1.5.
-- 4-tick direction buffer and 2-tick charge grace after leaving a ledge.
-- Splat on landing at max fall speed.
-- Ice (friction 0.1) and snow (no walking; weak jumps suppressed or boosted).
-- Wind: the clamped sine wave on the game's 17 ms clock, with the native latch
-  rules and no-wind zones.
-- The camera's screen-switch rule, side teleports, and the +1 px ground probe.
-
-Verification status:
-
-- The base-game TAS is reproduced tick for tick on the original map. It covers
-  walking, every jump strength used, wall and ceiling bounces, slopes, wind,
-  snow, screen changes and the ending.
-- **Splat recovery** is not exercised by the TAS. I checked it against the
-  disassembled `FailState`: the timer runs only while grounded, and any input
-  stands the king up after 0.5 s.
-- **Ice** (screens 36–39) and **slope/box precedence at mixed corners** are
-  exercised only partly by the TAS. They follow the parity-tested reference
-  port.
-- **The babe trigger** is a rectangle whose left edge is calibrated so the
-  ending fires exactly when the TAS's ending does.
-- **Not simulated**: sound, NPCs, ravens, items, cosmetics and the ending
-  cutscene.
+| Command | Purpose |
+| --- | --- |
+| `jumpking play` | keyboard play (R restart, F1 debug, F2 record `.tas`, F5/F9 save/load) |
+| `jumpking demo` | watch the built-in solution |
+| `jumpking replay file.tas` | play back any recording, including the real game's TAS files |
+| `jumpking solve --screen N` | BFS solver over landing states |
+| `jumpking preview` | render the map to PNG |
+| `jumpking benchmark` | measure simulation speed |
+| `jumpking info` | environment and install diagnostics |
 
 ## Project layout
 
 ```
 jumpking/
-  constants.py   researched constants (+ optional override file)
-  physics.py     tick kernel, collision, macros (numba JIT, pure-Python fallback)
-  level.py       hitbox atlas format, slope inference, wind/teleports
-  xnb.py         original level.xnb reader + Steam install discovery
-  game.py        Game API
-  envs/          Gymnasium environments
-  render.py      numpy renderer      play.py  pygame viewer
-  solver.py      BFS over landings   mapgen.py  physics-driven map generator
-  tas.py         .tas recordings     cli.py   `jumpking` command
-  data/          built-in map (level.png, level_meta.json with the verified route)
-scripts/         train_ppo, evaluate, validate_original, extract_constants, build_map
-examples/        go_explore
-tests/           pytest suite (physics rules, IO, env API, map solvability)
-docs/            RESEARCH.md (sources/mechanics), RL_GUIDE.md, PLAN.md
+  physics.py   tick kernel and macros (numba JIT, pure-Python fallback)
+  level.py     native hitbox atlas, slopes, wind, teleports
+  xnb.py       level.xnb reader + Steam discovery
+  envs/        Gymnasium envs + batched VectorEnv / SB3 adapter
+  game.py      high-level API
+  batch.py     batched simulator
+  solver.py    BFS over landings
+  mapgen.py    physics-driven map generator
+  render.py    numpy renderer
+  play.py      pygame viewer
+  tas.py       recordings
+  cli.py       `jumpking` command
+scripts/       train_ppo, evaluate, validate_original, extract_constants, build_map
+examples/      go_explore
+tests/         60 tests: physics rules, IO, env API, batching, map solvability, original-game parity
+docs/          RESEARCH.md (mechanics + sources), RL_GUIDE.md (API reference)
 ```
 
-Run the tests with `pytest`.
+## Contributing
+
+Bug reports, fidelity findings and new baselines are very welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md). Physics changes must keep the original-game
+parity test passing.
+
+## Citation
+
+If this project helps your research, please cite it. GitHub's "Cite this
+repository" button uses [CITATION.cff](CITATION.cff).
+
+```bibtex
+@software{jumpking_rl,
+  author  = {Tran, Ba Dat},
+  title   = {jumpking-rl: a tick-exact Jump King simulator for reinforcement learning},
+  year    = {2026},
+  url     = {https://github.com/TranBaDat2607/jumpking-rl},
+  version = {0.2.0}
+}
+```
+
+## Acknowledgements
+
+Mechanics research builds on the work of the Jump King community:
+
+- [ShootMe/JumpKingTAS](https://github.com/ShootMe/JumpKingTAS): the base-game TAS used for parity testing.
+- [anyalink99/jump-king-mods](https://github.com/anyalink99/jump-king-mods): the parity-tested description of the native physics pipeline.
+- [qequ/jump-king-parabole](https://github.com/qequ/jump-king-parabole): physics constants.
+- [TeamNexile/jk-workshop-docs](https://github.com/TeamNexile/jk-workshop-docs) and [JumpKingPlus](https://jumpkingplus.github.io/workshop/docs/modding/hitboxes/): the level format.
+
+No code from these projects is included. See [docs/RESEARCH.md](docs/RESEARCH.md)
+for exactly what was learned from each.
+
+## License and disclaimer
+
+The code, documentation and built-in map are released under the
+[MIT License](LICENSE).
+
+*Jump King* is a trademark of **Nexile**. This is an independent, fan-made
+research project, not affiliated with or endorsed by Nexile or UKIYO
+Publishing. It ships **no game assets**. The original map and executable are
+only read at runtime from a copy you own. Please
+[buy the game](https://store.steampowered.com/app/1061090/Jump_King/); it's
+great.

@@ -4,21 +4,43 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jumpking-rl"
-version = "0.1.0"
-description = "Faithful Jump King (base game) clone with a Gymnasium interface for reinforcement learning"
+version = "0.2.0"
+description = "A tick-exact Jump King (base game) simulator with Gymnasium environments for reinforcement learning"
 readme = "README.md"
-requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Tran Ba Dat"}]
+requires-python = ">=3.10"
+keywords = ["reinforcement-learning", "gymnasium", "jump-king", "hard-exploration", "platformer", "numba"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Games/Entertainment",
+]
 dependencies = [
     "numpy>=1.22",
     "numba>=0.57",
-    "gymnasium>=0.29",
+    "gymnasium>=1.0",
     "pillow>=9",
 ]
 
 [project.optional-dependencies]
 play = ["pygame>=2.1"]
 train = ["torch>=2.0", "stable-baselines3>=2.2"]
-dev = ["pytest>=7", "pygame>=2.1"]
+dev = ["pytest>=7", "pygame>=2.1", "dnfile>=0.14"]
+
+[project.urls]
+Homepage = "https://github.com/TranBaDat2607/jumpking-rl"
+Documentation = "https://github.com/TranBaDat2607/jumpking-rl/blob/main/docs/RL_GUIDE.md"
+Issues = "https://github.com/TranBaDat2607/jumpking-rl/issues"
+Changelog = "https://github.com/TranBaDat2607/jumpking-rl/blob/main/CHANGELOG.md"
 
 [project.scripts]
 jumpking = "jumpking.cli:main"

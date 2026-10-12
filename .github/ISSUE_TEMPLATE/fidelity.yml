@@ -1,0 +1,21 @@
+name: Fidelity difference
+description: The clone behaves differently from the real Jump King
+labels: [fidelity]
+body:
+  - type: input
+    id: screen
+    attributes:
+      label: Screen number(s)
+    validations:
+      required: true
+  - type: textarea
+    id: diff
+    attributes:
+      label: What does the real game do, and what does the clone do?
+    validations:
+      required: true
+  - type: textarea
+    id: tas
+    attributes:
+      label: Recording
+      description: Attach a .tas file (F2 in `jumpking play`) or a short video of the real game.
