@@ -197,6 +197,22 @@ pip install dnfile && python scripts/extract_constants.py --write  # exact Playe
   that the engine loads. This settles the one constant not found in public
   sources: the splat recovery time.
 
+### From the clone back to the real game
+
+`.tas` files written by the clone use the JumpKingTAS format: an `@x,y,dir`
+start line plus `frames,L/R/J` input lines. The clone's extra `#!state` line
+is a comment that other tools ignore. A route found on the original map, by
+an agent, the solver or Go-Explore, can therefore be played back in the real
+game with ShootMe's TAS tool.
+
+Keep in mind:
+
+- The real game's wind phase depends on its in-game timer. On wind screens
+  (26–32), start the recording from a fresh run (TAS `X` reset) so the timing
+  matches.
+- `scripts/validate_original.py` shows how closely the two simulations agree
+  on your installed version.
+
 ## Fidelity notes
 
 Reproduced from the original:

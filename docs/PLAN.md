@@ -51,3 +51,39 @@ jumpking/
 scripts/            train_ppo.py, evaluate.py, benchmark.py, build_map.py
 tests/
 ```
+
+## Status
+
+All goals are implemented and committed.
+
+- **Physics port**:
+  - per-tick pipeline, float32 numerics;
+  - grounded +1 px probe;
+  - wind latch and waveform on the 17 ms clock;
+  - slopes, ice, snow, splat, camera and teleports.
+- **Levels**:
+  - native atlas IO;
+  - `level.xnb` reader with Steam discovery;
+  - built-in 43-screen map, generated and verified by the engine.
+- **RL interface**:
+  - `JumpKingEnv` (macro or frame actions; vector, grid, rgb or dict
+    observations; rewards; curriculum; state access);
+  - natively batched `JumpKingVectorEnv` with an SB3 adapter;
+  - PPO training and evaluation scripts;
+  - Go-Explore example.
+- **Tools**:
+  - pygame play and replay viewer;
+  - `.tas` recordings;
+  - BFS solver;
+  - CLI;
+  - original-map parity validator (replays the base-game TAS);
+  - constant extractor for the user's own `JumpKing.exe`.
+- **Tests**: pytest suite of 55 tests.
+
+Open items need the original game files, which are currently not installed on
+this machine:
+
+- Run `scripts/validate_original.py --download` for tick-level parity on the
+  real map.
+- Run `scripts/extract_constants.py --write` to replace the estimated
+  `SPLAT_TIME`.
