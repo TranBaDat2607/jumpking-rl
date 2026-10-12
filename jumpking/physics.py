@@ -427,8 +427,13 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
                 vx = f32(vx - f32(dd * nx))
                 vy = f32(vy - f32(dd * ny))
 
-    # y movement
-    y = f32(y + vy)
+    # y movement. While grounded the native SandBlock behaviour adds one pixel
+    # to downward motion (outside sand), so a standing king re-touches the
+    # floor every tick instead of hovering above it.
+    dy = vy
+    if on_ground and vy > 0:
+        dy = f32(vy + 1.0)
+    y = f32(y + dy)
 
     # resolve y
     step_y = 1 if vy > 0 else -1
@@ -619,9 +624,9 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
         ev |= EV_SCREEN_DOWN
         s[S_FALLS] += 1
 
-    # landing event (ignores the 2-tick standing flicker)
+    # landing event
     if on_ground:
-        if s[S_AIR_TICKS] > 2:
+        if s[S_AIR_TICKS] > 0:
             ev |= EV_LAND
         s[S_AIR_TICKS] = 0
     else:

@@ -35,6 +35,9 @@ class Game:
         if x is None or y is None:
             x, y = self.level.start
         self.state = P.new_state(x, y, screen=screen, n_screens=self.level.n_screens)
+        if self.level.collides(int(x), int(y) + 1) and not self.level.collides(int(x), int(y)):
+            self.state[P.S_ON_GROUND] = 1
+            self.state[P.S_WAS_GROUNDED] = 1
         return self
 
     def reset_to_screen(self, screen, rng=None):

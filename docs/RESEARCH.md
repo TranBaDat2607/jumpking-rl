@@ -51,7 +51,7 @@ pixels with Y pointing down.
       gives `vx *= −0.5` and the knocked state. A slope gives a slide: the
       velocity is projected onto the slope surface when `last_velocity · n < 0`,
       or `vx = 0` when walking slowly into it on the ground.
-   6. **Y move**: `y += vy`.
+   6. **Y move**: `y += vy`, or `y += vy + 1` while grounded and `vy > 0`.
    7. **Resolve Y** works the same way, with `step = +1` when `vy > 0` and −1
       otherwise.
       - **Floor**: sets `on_ground`, clears knocked, and records ice and snow.
@@ -69,10 +69,15 @@ pixels with Y pointing down.
    player moves towards the target, and not while rising slower than 3 px/tick.
 
 The hitbox is `Rectangle((int)x, (int)y, 18, 26)`, which truncates toward zero.
-Because of this, a player standing still alternates between grounded and
-airborne. Gravity carries the player 0.26 px and then 0.77 px into the air, and
-the floor is hit again on the third tick. The controller expects this pattern:
-it tolerates up to 2 airborne ticks (`air_charge > 1/30 s` cancels a charge).
+
+While the king is grounded, downward motion gets an extra +1 px (applied by
+the always-present sand behaviour when outside sand). So a standing king
+re-touches the floor every tick and stays grounded: `vy` is 0 after
+collision, then `GRAVITY` after gravity (the 0.26 in TAS save states).
+
+Walking off a ledge clears ground contact on the next tick. An active charge
+survives 2 airborne ticks (`air_charge > 1/30 s` cancels it), which acts as
+coyote time.
 
 ## Controls
 
@@ -82,8 +87,7 @@ it tolerates up to 2 airborne ticks (`air_charge > 1/30 s` cancels a charge).
   sets splat and cancels any charge. While splatted, `vx = 0` (except on ice).
   The splat timer accumulates only while grounded. Once it reaches `SPLAT_TIME`,
   any jump or direction input stands the player up.
-- **In the air**: no control. An active charge survives 2 airborne ticks, so
-  it is not lost to the standing flicker.
+- **In the air**: no control, apart from the 2-tick charge grace.
 - **Direction history**: the last 4 grounded direction inputs. The jump uses
   the most recent non-zero one, so a direction pressed up to 3 ticks before
   release still counts.
