@@ -1,0 +1,11 @@
+jumpking-rl
+Copyright (c) 2026 Tran Ba Dat
+
+"Jump King" is a trademark of Nexile. This project is an independent,
+fan-made research tool. It is not affiliated with or endorsed by Nexile or
+UKIYO Publishing.
+
+The MIT license in LICENSE covers this repository's source code,
+documentation and built-in map only. The repository contains no game assets.
+The original map (Content/level.xnb) and executable (JumpKing.exe) are only
+read at runtime from a copy of the game that the user owns.

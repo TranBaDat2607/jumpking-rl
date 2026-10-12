@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----------------------------------------------------------------------------
-
-This license covers the source code, documentation and the built-in map of
-this repository only. "Jump King" is a trademark of Nexile. This project is
-an independent fan-made research tool, not affiliated with or endorsed by
-Nexile or UKIYO Publishing, and it contains no game assets. The original map
-and executable are read at runtime from a copy of the game that you own.
