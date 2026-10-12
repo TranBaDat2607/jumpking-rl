@@ -27,6 +27,8 @@ Rewards
 ``sparse``      1 on reaching the babe, 0 otherwise
 or any callable ``f(prev_info, info, events) -> float``.
 """
+import math
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
@@ -156,6 +158,7 @@ class JumpKingEnv(gym.Env):
 
         self._renderer = None
         self._window = None
+        self._vec_buf = np.zeros(len(VECTOR_FEATURES), np.float32)
         self._static_grid = self._build_static_grids()
         self._steps = 0
         self._info = None
@@ -187,7 +190,28 @@ class JumpKingEnv(gym.Env):
         return out
 
     def _vector_obs(self):
-        return vector_features(self.game.state, self.level)[0]
+        # scalar fast path (same features as vector_features, ~10x faster for one row)
+        s = self.game.state
+        screen = int(s[P.S_SCREEN])
+        top = -C.SCREEN_H * screen
+        total = float(C.SCREEN_H * self.level.n_screens)
+        has_wind = float(self.level.wind[screen])
+        wind = self.game.wind()
+        phase = (s[P.S_TICK] * C.TARGET_ELAPSED_SECONDS + s[P.S_WIND_OFFSET]) * C.WIND_PHASE_RATE
+        height = C.SCREEN_H - (int(s[P.S_Y]) + C.PLAYER_H)
+        out = self._vec_buf
+        out[:] = (
+            s[P.S_X] / C.SCREEN_W, (s[P.S_Y] - top) / C.SCREEN_H,
+            s[P.S_VX] / C.MAX_FALL, s[P.S_VY] / C.MAX_FALL,
+            screen / max(1, self.level.n_screens - 1),
+            s[P.S_ON_GROUND], s[P.S_KNOCKED], s[P.S_ON_ICE], s[P.S_ON_SNOW],
+            s[P.S_CHARGING], s[P.S_CHARGE] / C.JUMP_TIME, s[P.S_SPLAT],
+            wind / C.WIND_STRENGTH, s[P.S_WIND_LATCH], s[P.S_FACING],
+            height / total, (C.SCREEN_H - s[P.S_MAX_HEIGHT]) / total,
+            s[P.S_JUMP_HELD], (s[P.S_X] % 8) / 8.0, has_wind,
+            has_wind * math.sin(phase), has_wind * math.cos(phase),
+        )
+        return out.copy()
 
     def _grid_obs(self):
         s = self.game.state
