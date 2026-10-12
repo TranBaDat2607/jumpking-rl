@@ -189,6 +189,15 @@ Reference results on the built-in map:
 - **Go-Explore with state restore**: reaches the babe after about 42k
   iterations (46 s).
 
+Reference results on the **original** base-game map:
+
+- **Go-Explore**: beats the whole game in 120 s (110k iterations, 245 macro
+  actions). The exported `.tas` reaches the babe in 13,878 ticks (3:55.9 of
+  game time), compared with 3:44.9 for the human-made TAS. Along the way it
+  found the hidden Imp Room.
+- **PPO, batched env (64 kings)**: about 32k steps/s. In a 14-second run the
+  mean episode reward rose from 0.01 to 0.18, with a best height on screen 3.
+
 ## Using your original game
 
 Install Jump King from Steam; the clone finds it through the Steam library
