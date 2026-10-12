@@ -48,6 +48,12 @@ class Game:
 
     def spawn_points(self, screen, stride=8):
         """Integer positions on screen ``screen`` where the player can stand."""
+        cache = self.__dict__.setdefault("_spawn_cache", {})
+        if (screen, stride) not in cache:
+            cache[(screen, stride)] = self._spawn_points(screen, stride)
+        return cache[(screen, stride)]
+
+    def _spawn_points(self, screen, stride):
         lvl = self.level
         pts = []
         top = -C.SCREEN_H * screen
