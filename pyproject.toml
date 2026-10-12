@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jumpking-rl"
+version = "0.1.0"
+description = "Faithful Jump King (base game) clone with a Gymnasium interface for reinforcement learning"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.22",
+    "numba>=0.57",
+    "gymnasium>=0.29",
+    "pillow>=9",
+]
+
+[project.optional-dependencies]
+play = ["pygame>=2.1"]
+train = ["torch>=2.0", "stable-baselines3>=2.2"]
+dev = ["pytest>=7", "pygame>=2.1"]
+
+[project.scripts]
+jumpking = "jumpking.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["jumpking*"]
+
+[tool.setuptools.package-data]
+jumpking = ["data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

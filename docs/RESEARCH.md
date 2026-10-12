@@ -2,7 +2,7 @@
 
 These notes record what the clone reproduces and where each value comes from.
 Everything is per game tick. The game runs a fixed 60 Hz update
-(`TargetElapsedTime` = 166667 × 100 ns ≈ 0.0166667 s). Coordinates are in
+(physics `FrameDelta` = 1/60 s; the game clock `TargetElapsedTime` is 17 ms and drives wind and the in-game timer). Coordinates are in
 pixels with Y pointing down.
 
 ## Sources
