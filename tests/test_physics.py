@@ -253,13 +253,13 @@ def test_landing_on_slope_slides_down():
 
 
 def test_wind_waveform():
-    p = room().params()
-    vals = np.array([P.wind_velocity(t, p) for t in range(0, 2000)])
+    vals = np.array([P.wind_velocity(t, 0.0, 1.0) for t in range(0, 2000)])
     assert np.abs(vals).max() == pytest.approx(0.1, abs=1e-6)
     assert (vals > 0.099).any() and (vals < -0.099).any()
     # period 2*pi/0.48124886 s of game clock (17 ms ticks)
     period_ticks = 2 * np.pi / 0.48124886 / 0.017
-    assert P.wind_velocity(0, p) == pytest.approx(P.wind_velocity(int(round(period_ticks)), p), abs=0.02)
+    assert P.wind_velocity(0, 0.0, 1.0) == pytest.approx(
+        P.wind_velocity(int(round(period_ticks)), 0.0, 1.0), abs=0.02)
 
 
 def test_wind_latch_requires_landing():

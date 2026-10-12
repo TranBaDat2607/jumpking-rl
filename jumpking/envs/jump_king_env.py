@@ -157,7 +157,7 @@ class JumpKingEnv(gym.Env):
         wind = self.game.wind()
         total = float(self.game.total_height)
         has_wind = float(self.level.wind[screen])
-        t = s[P.S_TICK] * C.TARGET_ELAPSED_SECONDS + self.game.params[P.P_WIND_OFFSET]
+        t = s[P.S_TICK] * C.TARGET_ELAPSED_SECONDS + s[P.S_WIND_OFFSET]
         phase = t * C.WIND_PHASE_RATE
         v = np.array([
             s[P.S_X] / C.SCREEN_W,

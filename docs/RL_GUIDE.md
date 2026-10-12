@@ -135,8 +135,9 @@ whose layout is given by the `S_*` indices in `jumpking/physics.py`.
   sequences between states.
 - **Hindsight and replay buffers.**
 
-The wind depends on the tick counter and the wind offset, which are both part
-of the state or the env's parameters, so restoring a state is bit-exact.
+The wind depends on the tick counter and the wind-clock offset. Both are part
+of the state vector, so restoring a state is bit-exact, including the wind
+timing.
 
 ## Reward design
 

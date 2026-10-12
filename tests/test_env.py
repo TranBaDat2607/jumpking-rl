@@ -73,6 +73,18 @@ def test_get_set_state_and_macro_index():
     assert r1 == r2
 
 
+def test_state_carries_wind_phase():
+    env = JumpKingEnv(start=25, wind_phase="random")
+    env.reset(seed=4)
+    s = env.get_state()
+    a = env.macro_index("jump", 1, 30)
+    o1, *_ = env.step(a)
+    env.reset(seed=5)          # different wind phase in the env parameters
+    env.set_state(s)
+    o2, *_ = env.step(a)
+    np.testing.assert_array_equal(o1, o2)
+
+
 def test_curriculum_start_screens():
     env = JumpKingEnv(start="random_screen", max_start_screen=10)
     seen = set()

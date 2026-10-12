@@ -134,7 +134,8 @@ S_GOAL = 32
 S_LAST_EVENTS = 33
 S_MAX_HEIGHT = 34    # best (lowest) world y of the hitbox bottom seen so far
 S_LAST_POWER = 35    # power of the last jump
-STATE_SIZE = 36
+S_WIND_OFFSET = 36   # seconds added to the wind clock (part of the state)
+STATE_SIZE = 37
 
 # events (bit flags returned by tick)
 EV_JUMP = 1
@@ -155,7 +156,7 @@ P_GOAL_X0 = 1
 P_GOAL_Y0 = 2
 P_GOAL_X1 = 3
 P_GOAL_Y1 = 4
-P_WIND_OFFSET = 5    # seconds added to the wind clock
+P_WIND_OFFSET = 5    # default wind clock offset copied into new states
 P_N_SCREENS = 6
 P_OFFSET_Y = 7       # world y -> grid y offset (= 360 * (n_screens - 1))
 P_WIND_SCALE = 8     # 1.0 = original
@@ -299,9 +300,9 @@ def in_nowind(tiles, offy, hx, hy):
 
 
 @_jit
-def wind_velocity(tick, params):
+def wind_velocity(tick, offset, scale):
     """Port of WindManager.CurrentVelocityRaw for the default intensity."""
-    seconds = tick * TARGET_ELAPSED_SECONDS + params[P_WIND_OFFSET]
+    seconds = tick * TARGET_ELAPSED_SECONDS + offset
     # TimeSpan.FromSeconds rounds to whole milliseconds (.NET Framework)
     ms = math.floor(seconds * 1000.0 + 0.5)
     t = f32(ms / 1000.0)
@@ -315,7 +316,7 @@ def wind_velocity(tick, params):
         wave = 1.0
     if wave < -1.0:
         wave = -1.0
-    return f32(f32(wave * WIND_STRENGTH) * params[P_WIND_SCALE])
+    return f32(f32(wave * WIND_STRENGTH) * scale)
 
 
 @_jit
@@ -368,7 +369,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
         s[S_WIND_LATCH] = 1
     if (not on_snow) and s[S_WIND_LATCH] > 0 and wind_en[screen] != 0:
         if not in_nowind(tiles, offy, int(x), int(y)):
-            vx = f32(vx + wind_velocity(s[S_TICK], params))
+            vx = f32(vx + wind_velocity(s[S_TICK], s[S_WIND_OFFSET], params[P_WIND_SCALE]))
     s[S_LAST_SCREEN] = screen
 
     # x movement
@@ -758,7 +759,7 @@ def macro_walk(s, direction, ticks, tiles, wind_en, tp_left, tp_right, params, m
     return ev | e2, n + n2
 
 
-def new_state(x=C.START_X, y=C.START_Y, screen=None, n_screens=1):
+def new_state(x=C.START_X, y=C.START_Y, screen=None, n_screens=1, wind_offset=0.0):
     s = np.zeros(STATE_SIZE, dtype=np.float64)
     s[S_X] = x
     s[S_Y] = y
@@ -769,4 +770,5 @@ def new_state(x=C.START_X, y=C.START_Y, screen=None, n_screens=1):
     s[S_SCREEN] = screen
     s[S_LAST_SCREEN] = screen
     s[S_MAX_HEIGHT] = int(y) + PH
+    s[S_WIND_OFFSET] = wind_offset
     return s

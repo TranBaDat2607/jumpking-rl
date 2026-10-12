@@ -34,7 +34,8 @@ class Game:
         """Place the player (defaults to the level start) standing still."""
         if x is None or y is None:
             x, y = self.level.start
-        self.state = P.new_state(x, y, screen=screen, n_screens=self.level.n_screens)
+        self.state = P.new_state(x, y, screen=screen, n_screens=self.level.n_screens,
+                                 wind_offset=float(self.params[P.P_WIND_OFFSET]))
         if self.level.collides(int(x), int(y) + 1) and not self.level.collides(int(x), int(y)):
             self.state[P.S_ON_GROUND] = 1
             self.state[P.S_WAS_GROUNDED] = 1
@@ -100,7 +101,8 @@ class Game:
         return self.state.copy()
 
     def restore(self, snap):
-        self.state[:] = snap
+        n = min(len(snap), P.STATE_SIZE)  # older (shorter) snapshots stay loadable
+        self.state[:n] = snap[:n]
 
     # --------------------------------------------------------------- query
     s = property(lambda self: self.state)
@@ -131,7 +133,8 @@ class Game:
         """Current wind acceleration (px/tick^2) if the screen is windy."""
         if not self.level.wind[self.screen]:
             return 0.0
-        return float(P.wind_velocity(self.state[P.S_TICK], self.params))
+        return float(P.wind_velocity(self.state[P.S_TICK], self.state[P.S_WIND_OFFSET],
+                                     self.params[P.P_WIND_SCALE]))
 
     def info(self):
         s = self.state
