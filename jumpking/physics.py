@@ -38,9 +38,11 @@ def _invalidate_stale_cache():
     here = os.path.dirname(os.path.abspath(__file__))
     cache_dir = os.path.join(here, "__pycache__")
     digest = hashlib.sha1()
-    for name in ("constants.py", "physics.py"):
-        with open(os.path.join(here, name), "rb") as fh:
-            digest.update(fh.read())
+    for path in (os.path.join(here, "constants.py"), os.path.join(here, "physics.py"),
+                 C.OVERRIDE_PATH):
+        if os.path.isfile(path):
+            with open(path, "rb") as fh:
+                digest.update(fh.read())
     stamp = os.path.join(cache_dir, "physics.constants.sha1")
     try:
         with open(stamp, "r") as fh:

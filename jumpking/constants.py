@@ -3,6 +3,9 @@
 All physics values are float32 in the original game; they are stored here as
 Python floats that are exactly representable as float32.
 """
+import json
+import os
+
 import numpy as np
 
 
@@ -79,3 +82,17 @@ def area_of_screen(screen_index):
         if a <= n <= b:
             return name
     return "Unknown"
+
+
+# --- optional overrides --------------------------------------------------
+# scripts/extract_constants.py --write reads the exact values from your own
+# JumpKing.exe and stores them here; JUMPKING_CONSTANTS can point elsewhere.
+OVERRIDE_PATH = os.environ.get("JUMPKING_CONSTANTS") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "constants_override.json")
+OVERRIDES = {}
+if os.path.isfile(OVERRIDE_PATH):
+    with open(OVERRIDE_PATH, "r", encoding="utf-8") as _fh:
+        OVERRIDES = json.load(_fh)
+    for _k, _v in OVERRIDES.items():
+        if _k in globals() and isinstance(globals()[_k], float):
+            globals()[_k] = _f32(_v)
