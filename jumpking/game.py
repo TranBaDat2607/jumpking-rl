@@ -19,12 +19,12 @@ DEFAULT_MACRO_TIMEOUT = 60 * 30  # ticks
 
 class Game:
     def __init__(self, level="auto", splat_time=C.SPLAT_TIME, wind_scale=1.0,
-                 wind_offset=0.0):
+                 wind_offset=0.0, legacy_teleport=False):
         if isinstance(level, str):
             level = Level.load(level)
         self.level = level
         self.params = level.params(splat_time=splat_time, wind_offset=wind_offset,
-                                   wind_scale=wind_scale)
+                                   wind_scale=wind_scale, legacy_teleport=legacy_teleport)
         self._args = (level.tiles, level.wind, level.tp_left, level.tp_right, self.params)
         self.state = None
         self.reset()
@@ -34,11 +34,23 @@ class Game:
         """Place the player (defaults to the level start) standing still."""
         if x is None or y is None:
             x, y = self.level.start
+        items = None if self.state is None else self.state[[P.S_BOOTS, P.S_RING]].copy()
         self.state = P.new_state(x, y, screen=screen, n_screens=self.level.n_screens,
                                  wind_offset=float(self.params[P.P_WIND_OFFSET]))
+        if items is not None:
+            self.state[[P.S_BOOTS, P.S_RING]] = items
         if self.level.collides(int(x), int(y) + 1) and not self.level.collides(int(x), int(y)):
             self.state[P.S_ON_GROUND] = 1
             self.state[P.S_WAS_GROUNDED] = 1
+        return self
+
+    def wear(self, giant_boots=None, snake_ring=None):
+        """Put on / take off the Giant Boots (no walking, landing thud) and the
+        Snake Ring (every floor is ice, snow has no effect)."""
+        if giant_boots is not None:
+            self.state[P.S_BOOTS] = 1.0 if giant_boots else 0.0
+        if snake_ring is not None:
+            self.state[P.S_RING] = 1.0 if snake_ring else 0.0
         return self
 
     def reset_to_screen(self, screen, rng=None):
@@ -114,6 +126,9 @@ class Game:
     on_ground = property(lambda self: bool(self.state[P.S_ON_GROUND]))
     settled = property(lambda self: bool(P.is_settled(self.state)))
     done = property(lambda self: bool(self.state[P.S_GOAL]))
+    ending = property(lambda self: int(self.state[P.S_ENDING]))
+    in_water = property(lambda self: bool(self.state[P.S_IN_WATER]))
+    in_sand = property(lambda self: bool(self.state[P.S_IN_SAND]))
     ticks = property(lambda self: int(self.state[P.S_TICK]))
 
     @property
@@ -131,10 +146,11 @@ class Game:
 
     def wind(self):
         """Current wind acceleration (px/tick^2) if the screen is windy."""
-        if not self.level.wind[self.screen]:
+        code = int(self.level.wind[self.screen])
+        if not code:
             return 0.0
         return float(P.wind_velocity(self.state[P.S_TICK], self.state[P.S_WIND_OFFSET],
-                                     self.params[P.P_WIND_SCALE]))
+                                     self.params[P.P_WIND_SCALE], code))
 
     def info(self):
         s = self.state
@@ -150,5 +166,7 @@ class Game:
             "splat": bool(s[P.S_SPLAT]), "wind": self.wind(),
             "ticks": int(s[P.S_TICK]), "jumps": int(s[P.S_JUMPS]),
             "falls": int(s[P.S_FALLS]), "splats": int(s[P.S_SPLATS]),
-            "goal": bool(s[P.S_GOAL]),
+            "goal": bool(s[P.S_GOAL]), "ending": int(s[P.S_ENDING]),
+            "in_water": bool(s[P.S_IN_WATER]), "in_sand": bool(s[P.S_IN_SAND]),
+            "giant_boots": bool(s[P.S_BOOTS]), "snake_ring": bool(s[P.S_RING]),
         }

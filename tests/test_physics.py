@@ -337,14 +337,33 @@ def test_determinism_and_snapshot(flat_game):
 
 PARITY_SCRIPT = r"""
 import json, numpy as np, sys
+sys.path.insert(0, "tests")
+from conftest import playground
+from jumpking import physics as P
 from jumpking.game import Game
 from jumpking.level import Level
+out = []
 g = Game(Level.builtin())
 rng = np.random.default_rng(11)
 for k in range(40):
     g.jump(int(rng.integers(-1, 2)), int(rng.integers(2, 37)))
     g.walk(int(rng.choice([-1, 1])), int(rng.integers(2, 30)))
-print(json.dumps([float(v) for v in g.state]))
+out += [float(v) for v in g.state]
+# every block type, the items and per-frame inputs
+g = Game(playground())
+rng = np.random.default_rng(5)
+starts = [(40.0, 302.0), (300.0, 302.0), (100.0, -58.0), (60.0, -418.0), (300.0, -418.0)]
+for episode in range(40):
+    x, y = starts[episode % len(starts)]
+    g.reset(x, y)
+    g.wear(giant_boots=bool(episode % 3 == 1), snake_ring=bool(episode % 4 == 2))
+    for k in range(150):
+        d = int(rng.integers(-1, 2))
+        j = int(rng.random() < 0.6)
+        for _ in range(int(rng.integers(1, 30))):
+            g.step(d, j)
+    out += [float(v) for v in g.state]
+print(json.dumps(out))
 """
 
 

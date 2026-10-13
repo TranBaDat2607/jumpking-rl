@@ -19,13 +19,24 @@ Observation modes
 ``rgb``     rendered frame, ``image_size`` (H, W, 3).
 ``dict``    ``{"vector": ..., "grid": ...}``.
 
+Endings
+-------
+The original world has three babes (``level.endings``): ``normal`` (screen
+43), ``new_babe_plus`` (screen 100) and ``ghost_of_the_babe`` (screen 154).
+Reaching any babe ends the game, as in the real one; ``ending`` picks the one
+that counts as success (``"any"`` accepts all three). Use ``start="imp_room"``
+for the New Babe+ crown-sacrifice start.
+
 Rewards
 -------
 ``height``      potential-based: change of height / 360 (+ goal bonus)
 ``max_height``  only new record heights are rewarded (+ goal bonus)
 ``screen``      +1 per new highest screen, -1 per screen fallen (+ goal bonus)
+``route``       +1 per new screen along the route of ``ending`` (routes.py);
+                the right reward for the DLC routes, which go sideways and down
 ``sparse``      1 on reaching the babe, 0 otherwise
-or any callable ``f(prev_info, info, events) -> float``.
+or any callable ``f(prev_info, info, events) -> float``. The goal bonus is
+only paid for the selected ending.
 """
 import math
 
@@ -37,6 +48,7 @@ from .. import constants as C
 from .. import physics as P
 from ..game import Game
 from ..level import Level
+from ..routes import START_POSITIONS, RouteProgress, ending_id, route_for
 
 FRAME_ACTIONS = (
     (0, False),   # 0 noop
@@ -51,8 +63,14 @@ VECTOR_FEATURES = (
     "x", "y_in_screen", "vx", "vy", "screen", "on_ground", "knocked", "on_ice",
     "on_snow", "charging", "charge", "splat", "wind", "wind_active", "facing",
     "height", "max_height", "jump_held", "x_tile_frac", "screen_has_wind",
-    "wind_phase_sin", "wind_phase_cos",
+    "wind_phase_sin", "wind_phase_cos", "in_water", "in_sand", "giant_boots", "snake_ring",
 )
+
+# grid observation, channel 1 ("special" surfaces)
+SPECIAL_VALUES = {P.T_ICE: 255, P.T_SNOW: 160, P.T_WATER: 208, P.T_SAND: 128, P.T_QUARK: 64,
+                  P.T_NOWIND: 48}
+BLOCKING_TILES = (P.T_SOLID, P.T_ICE, P.T_SNOW, P.T_SLOPE_TL, P.T_SLOPE_TR, P.T_SLOPE_BL,
+                  P.T_SLOPE_BR)
 
 
 def wind_force(ticks, offsets, scale=1.0):
@@ -74,8 +92,11 @@ def vector_features(states, level):
     top = -C.SCREEN_H * screen
     n = max(1, level.n_screens - 1)
     total = float(C.SCREEN_H * level.n_screens)
-    has_wind = level.wind[screen].astype(np.float64)
+    codes = level.wind[screen].astype(np.int64)
+    has_wind = (codes > 0).astype(np.float64)
     wind = has_wind * wind_force(s[:, P.S_TICK], s[:, P.S_WIND_OFFSET])
+    for i in np.nonzero(codes >= 2)[0]:   # coloured wind variants (not in the original map)
+        wind[i] = P.wind_velocity(s[i, P.S_TICK], s[i, P.S_WIND_OFFSET], 1.0, int(codes[i]))
     t = s[:, P.S_TICK] * C.TARGET_ELAPSED_SECONDS + s[:, P.S_WIND_OFFSET]
     phase = t * C.WIND_PHASE_RATE
     height = C.SCREEN_H - (s[:, P.S_Y].astype(np.int64) + C.PLAYER_H)
@@ -92,6 +113,7 @@ def vector_features(states, level):
         height / total, max_height / total,
         s[:, P.S_JUMP_HELD], (s[:, P.S_X] % 8) / 8.0, has_wind,
         has_wind * np.sin(phase), has_wind * np.cos(phase),
+        s[:, P.S_IN_WATER], s[:, P.S_IN_SAND], s[:, P.S_BOOTS], s[:, P.S_RING],
     ]
     return np.stack(cols, axis=1).astype(np.float32)
 
@@ -100,17 +122,22 @@ class JumpKingEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array", "human"], "render_fps": C.FPS}
 
     def __init__(self, level="auto", action_mode="macro", obs_mode="vector",
-                 reward="height", goal_bonus=10.0, step_penalty=0.0,
+                 reward="height", goal_bonus=10.0, step_penalty=0.0, ending="normal",
                  max_episode_steps=None, frame_skip=4,
                  charges=tuple(range(2, 37)), walk_ticks=(4, 8, 16, 32),
                  start="start", max_start_screen=None, wind_phase="random",
                  splat_time=C.SPLAT_TIME, image_size=(90, 120),
-                 macro_timeout=60 * 20, render_mode=None):
+                 macro_timeout=60 * 20, giant_boots=False, snake_ring=False,
+                 render_mode=None):
         super().__init__()
         if isinstance(level, str):
             level = Level.load(level)
         self.level = level
         self.game = Game(level, splat_time=splat_time)
+        self.game.wear(giant_boots=giant_boots, snake_ring=snake_ring)
+        self.ending = ending
+        self.ending_id = ending_id(ending)
+        self._route = RouteProgress(route_for(ending))
         self.action_mode = action_mode
         self.obs_mode = obs_mode
         self.reward_mode = reward
@@ -179,13 +206,11 @@ class JumpKingEnv(gym.Env):
         out = []
         for i in range(self.level.n_screens):
             g = self.level.screen_grid(i)
-            blocking = np.isin(g, (P.T_SOLID, P.T_ICE, P.T_SNOW, P.T_SLOPE_TL, P.T_SLOPE_TR,
-                                   P.T_SLOPE_BL, P.T_SLOPE_BR)).astype(np.uint8) * 255
+            blocking = np.isin(g, BLOCKING_TILES).astype(np.uint8) * 255
             special = np.zeros_like(g, dtype=np.uint8)
-            special[g == P.T_ICE] = 255
-            special[g == P.T_SNOW] = 160
             special[(g >= P.T_SLOPE_TL) & (g <= P.T_SLOPE_BR)] = 96
-            special[g == P.T_NOWIND] = 48
+            for code, value in SPECIAL_VALUES.items():
+                special[g == code] = value
             out.append((blocking, special))
         return out
 
@@ -195,7 +220,7 @@ class JumpKingEnv(gym.Env):
         screen = int(s[P.S_SCREEN])
         top = -C.SCREEN_H * screen
         total = float(C.SCREEN_H * self.level.n_screens)
-        has_wind = float(self.level.wind[screen])
+        has_wind = 1.0 if self.level.wind[screen] else 0.0
         wind = self.game.wind()
         phase = (s[P.S_TICK] * C.TARGET_ELAPSED_SECONDS + s[P.S_WIND_OFFSET]) * C.WIND_PHASE_RATE
         height = C.SCREEN_H - (int(s[P.S_Y]) + C.PLAYER_H)
@@ -210,6 +235,7 @@ class JumpKingEnv(gym.Env):
             height / total, (C.SCREEN_H - s[P.S_MAX_HEIGHT]) / total,
             s[P.S_JUMP_HELD], (s[P.S_X] % 8) / 8.0, has_wind,
             has_wind * math.sin(phase), has_wind * math.cos(phase),
+            s[P.S_IN_WATER], s[P.S_IN_SAND], s[P.S_BOOTS], s[P.S_RING],
         )
         return out.copy()
 
@@ -271,13 +297,23 @@ class JumpKingEnv(gym.Env):
                 self._best_screen = info["screen"]
             if info["screen"] < prev["screen"]:
                 r -= prev["screen"] - info["screen"]
+        elif mode == "route":
+            r = float(info["route_steps"])
         elif mode == "sparse":
             r = 0.0
         else:
             raise ValueError("unknown reward mode %r" % (mode,))
-        if info["goal"] and not prev["goal"]:
+        if info["success"] and not prev["success"]:
             r += self.goal_bonus
         return r - self.step_penalty
+
+    def _make_info(self, steps=0):
+        info = self.game.info()
+        info["success"] = bool(info["goal"]) and (self.ending_id == 0
+                                                  or info["ending"] == self.ending_id)
+        info["route_steps"] = int(steps)
+        info["route_progress"] = int(self._route.index[0])
+        return info
 
     # ---------------------------------------------------------------- api
     def reset(self, *, seed=None, options=None):
@@ -297,6 +333,8 @@ class JumpKingEnv(gym.Env):
             start = options.get("screen", self.start_mode)
             if start == "start" or start is None:
                 g.reset()
+            elif start in START_POSITIONS:
+                g.reset(*START_POSITIONS[start])
             elif start == "random_screen":
                 screen = int(self.np_random.integers(0, self.max_start_screen + 1))
                 g.reset_to_screen(screen, rng=self.np_random)
@@ -308,7 +346,8 @@ class JumpKingEnv(gym.Env):
             g.settle()
         self._steps = 0
         self._best_screen = g.screen
-        self._info = g.info()
+        self._route.reset([g.screen])
+        self._info = self._make_info()
         info = dict(self._info, events=0, ticks_used=0)
         return self._obs(), info
 
@@ -327,7 +366,7 @@ class JumpKingEnv(gym.Env):
             events = g.run([(d, 1 if j else 0)] * self.frame_skip)
             ticks = self.frame_skip
         self._steps += 1
-        info = g.info()
+        info = self._make_info(int(self._route.update([g.screen])[0]))
         reward = self._reward(prev, info, events)
         self._info = info
         terminated = bool(info["goal"])
@@ -344,7 +383,7 @@ class JumpKingEnv(gym.Env):
 
     def set_state(self, state):
         self.game.restore(np.asarray(state, dtype=np.float64))
-        self._info = self.game.info()
+        self._info = self._make_info()
 
     # ------------------------------------------------------------- render
     def render(self):
