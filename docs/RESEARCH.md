@@ -278,6 +278,136 @@ screen; `P = (240, 180) + INSIDE_SCREEN_POSITION + (0, −360 × screen)`:
 | New Babe+ (`NewBabePlusEnding`) | 100 | `x ≤ 144` and `y ≤ −35 495` |
 | Ghost of the Babe (`OwlEnding`) | 154 | `x ≥ 240` and `y ≤ −54 935` |
 
+## Runs, items, NPCs and achievements (the campaign)
+
+`jumpking/campaign.py` reproduces the game around the physics; the logic is
+ported from the classes named below (S8) and fed with the content files of
+the install (S10). The behaviour-tree library those entities are built from
+(`BehaviorTree.*`) is ported literally in `jumpking/bt.py`, because its
+semantics set the timing. A node that did not run on the previous tick
+restarts, sequences and running-selectors resume at their running child, and
+timers accumulate the 1/60 s frame delta in float32.
+
+### Frame order
+
+`GameLoop` first advances the achievement clock (`AchievementManager.Update`,
+which also checks the outfit achievements every frame), then the win check.
+The entities then update in reverse creation order: items spawned during the
+run, the `FullRunManager`, the player, the illusory-wall and achievement
+triggers, the world items, the merchants, the NPCs and the birds
+(`IntroState.InitializeEntities`, `PropManager.Load`, `EntityManager.Update`).
+
+### Saves: what a new game resets
+
+- **Permanent** (`SavesPerma`, `campaign.Profile`): the inventory, the equip
+  options and worn skins, story flags (`CompletedNormalGame`, `CompletedNBP`,
+  `CompletedGhost`, `StartedNBP`, `StartedGhost`), lifetime statistics (jumps,
+  falls = splats, frames, attempts, wins) with the snapshot taken at the start
+  of the attempt, and the Steam achievements.
+- **Per run** (`CombinedSaveFile`, `campaign.RunState`): NPC states, merchant
+  states, the birds' perches, the world items still lying around, and
+  `FullRunSave` (whether the Giant Boots / Snake Ring were worn since screen 1).
+
+### New games
+
+The title menu offers New Game, New Babe+ and Ghost of the Babe. All three
+start at (231, 302) on screen 1. New Game and Ghost of the Babe move the white
+raven to perch 17 on screen 48 (`NBPDecisionState.MoveWhiteBird`). New Babe+
+with the crown in the inventory asks whether to sacrifice it. Sacrificing
+removes the crown and starts in the Imp Room at (171, −15570); keeping it
+starts on screen 1. Wearing the New Babe+ crown starts in the Imp Room for free.
+
+### Items and skins
+
+World items (`Content/props/worlditems/worlditems.xml`) are picked up when the
+hitbox touches the item's sprite rectangle (anchored at its bottom centre).
+Each pickup adds one to the inventory and puts the item on if it is
+wearable. Skins (`Content/king/skin_settings.xml`) occupy layers: Hat (crowns,
+cap, gnome hat), Boots (shoes, Giant Boots, yellow shoes), Shirt (tunic),
+SnakeRing and Cape. Putting one on takes off whatever shares its layer. The
+Giant Boots and the shop's yellow shoes are only displayed in the world; they
+are sold.
+
+| Item | Where |
+| --- | --- |
+| Gold ring | dropped by the raven at its last perch (screen 32), once per run |
+| Ruby | dropped by the white raven at its last perch (screen 49) |
+| Silver coins (10) | New Babe+: screens 52, 53, 54, 56, 60, 68, 81, 91, 93, 94 |
+| Mushrooms (9) | Philosopher's Forest: screens 157–160 |
+| Ghost fragments (4) | screens 108, 111, 113, 115 |
+| Gnome hat | screen 160 |
+| Cap | screen 6 |
+| Babe ghost | screen 108 (picked up anywhere on screen 106) |
+| Crown / New Babe+ crown / owl crown | the three endings |
+| Owl cape | the Ghost of the Babe ending, if the red bird was chased off all its perches |
+
+### NPCs (`OldManEntity`, `OldManComp`, `OldManState`)
+
+An NPC talks when the camera is on its home screen and the king touches its
+trigger box. It then waits 0.5 s, checks the box again, and waits the rest of
+its `talk_delay`. It takes a quote: first a story-flag quote, then the intro,
+then the most recent quote of its pool, and once the pool is empty its
+looping lines, if it has any. It says the quote line by line, one character
+per `talking_speed` (default 0.05 s) with a 2.2 s pause after each line, then
+it is busy for 30 s. The pool grows when the camera reaches a screen beyond
+the best one seen this run that has quotes for that NPC. Talk achievements
+compare the run's talk count with a fixed number when a conversation ends:
+old man 10 and 40, hermit 10, Bargainburg merchant 4, the outsider cat 1,
+the gargoyles 1.
+
+### Merchants (`MerchantEntity`, `MerchantComp`)
+
+| Merchant | Screen | Sells | Price (fixed when the run starts) | Achievements |
+| --- | --- | --- | --- | --- |
+| merchant | 15 | Shoes | gold rings owned + 1 | ≥ 1: `PURCHASE_SHOES`, ≥ 10: `PURCHASE_FOR_10` |
+| merchant_nbp | 71 | Giant Boots | silver owned + 10 | ≥ 10: `BUY_GIANTBOOTS` |
+| snake | 88 | Snake Ring | rubies owned + 1 | ≥ 1: `BUY_ICERING` |
+| owl_mold_man | 109 | Yellow shoes | ghost fragments owned + 4 | ≥ 4: `PURCHASE_YELLOW_SHOES` |
+| owl_shroom_guy | 160 | Tunic | mushrooms owned + 9 | ≥ 9: `PURCHASE_SCHOLAR_TUNIC` |
+
+On first contact a merchant introduces itself. If the king still touches it
+afterwards and can pay, it sells: it takes the price, gives the item and puts
+it on.
+
+### Birds (`RavenEntity`, `RavenComp`, `RavenFlee`)
+
+Each bird sits on a perch from its `.ravset` path. When the king's hitbox
+centre comes within the perch's trigger distance (40 px by default), the bird
+flies off. It flies up (or down and sideways when its next perch is on a lower
+screen), accelerating every second frame, until it leaves the camera's view.
+It then sits on its next perch. After the last perch it is gone.
+
+| Bird | Perches | Reward |
+| --- | --- | --- |
+| raven | 14, screens 3 → 32 | gold ring at the last perch; `CHASE_BIRD_PAST_SNOWSTORM` on reaching it; `WIN_TOUCH_CROW_2` if it fled exactly twice when the normal babe is reached |
+| white raven | 52, screens 1 → 18, then 48 → 88 → 49 | ruby at the last perch |
+| red bird (tsuchinoko) | 17, Philosopher's Forest → screen 147 | the owl cape at the Ghost of the Babe ending (`GET_OWLCAPE`) |
+| fly | 39, screens 117–119 | `CHASE_AWAY_BUG` when it leaves its last perch |
+
+### Achievements
+
+The 48 codes are the game's `AchievementCode` enum; `jumpking/achievements.py`
+lists each with its store name and exact rule (`jumpking achievements` prints
+them). Highlights of the rules:
+
+- Falls are splats. The 100th and 1000th splat are checked with equality.
+  Jumps are checked with `≥ 1000`, `≥ 10000` and `≥ 20000` (the enum calls the
+  last one `JUMP_100000`).
+- Win checks run at the moment of victory, on the run's statistics (frames
+  since the run began × 17 ms; splats; jumps). The outfit achievements are
+  checked every frame.
+- The Giant Leaps and Absolute Will achievements need the item worn on
+  screen 1 and never taken off since (`FullRunManager`). A New Babe+ run that
+  starts in the Imp Room only counts after the king walks back to screen 1.
+- Hitbox achievements: Chapel Perilous (screen 33), the Imp Room (45), the
+  nose (screen 71, a 13 × 8 box), Deep Ruin's sea (top 160 px of screen 90),
+  and illusory walls on screens 6, 7, 8 and 22.
+
+Store names and descriptions come from Steam's community stats page and
+GameFAQs' achievement list. The order of the latter matches the enum, which
+pins the code ↔ name mapping (SteamDB, which lists the same data, rejects
+automated requests).
+
 ## Verification against the installed game
 
 With the game installed from Steam (app 1061090), I checked the clone against
@@ -309,6 +439,12 @@ the real files.
   | `NewGame.tas` | 43 / 43 | normal | 3:44.859 |
   | `NewBabe.tas` | 56 / 56 | New Babe+ | 5:20.637 |
   | `NewGhost.tas` | 71 / 71 | Ghost of the Babe | 5:35.138 |
+
+  The same three routes also replay inside the full campaign (all NPCs,
+  birds and triggers running) and unlock what a player of those runs gets,
+  e.g. Fool me Twice... (the speed-run scares the raven exactly twice) and
+  Nobody's Perfect (the Ghost route has exactly two falls)
+  (`tests/test_campaign.py`).
 
   Details of the TAS tool and of the 2019-2020 game builds the routes were
   recorded on:

@@ -2,8 +2,9 @@ cff-version: 1.2.0
 message: "If you use this software in your research, please cite it as below."
 title: "jumpking-rl: a verified Jump King simulator for reinforcement learning"
 abstract: >-
-  A deterministic, numba-accelerated reimplementation of the base game of
-  Jump King with Gymnasium environments, batched simulation, O(1) state
+  A deterministic, numba-accelerated reimplementation of Jump King (the base
+  game, New Babe+ and Ghost of the Babe, with its NPCs, items and all 48
+  achievements) with Gymnasium environments, batched simulation, O(1) state
   save/restore and tick-exact parity with the original game.
 authors:
   - given-names: Ba Dat
@@ -11,7 +12,7 @@ authors:
     alias: TranBaDat2607
 repository-code: "https://github.com/TranBaDat2607/jumpking-rl"
 license: MIT
-version: 0.2.0
+version: 0.3.0
 date-released: 2026-10-13
 keywords:
   - reinforcement learning

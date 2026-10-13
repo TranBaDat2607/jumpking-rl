@@ -4,4 +4,4 @@ from .game import Game
 from .level import Level
 
 __all__ = ["Game", "Level", "constants"]
-__version__ = "0.2.0"
+__version__ = "0.3.0"

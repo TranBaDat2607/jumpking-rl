@@ -491,3 +491,63 @@ def test_all_48_on_one_profile(shared):
         _splat(c)
         wait(c, 31)
     assert set(CODES) - c.unlocked == set()
+
+
+def test_campaign_env(shared):
+    import gymnasium as gym
+
+    import jumpking.envs  # noqa: F401
+    from jumpking.envs.campaign_env import CAMPAIGN_FEATURES
+
+    level, content = shared
+    env = gym.make("JumpKingCampaign-v0", level=level, content=content)
+    obs, info = env.reset(seed=0)
+    assert obs.shape == (len(CAMPAIGN_FEATURES),)
+    total = 0.0
+    for _ in range(60 * 30 // 4):           # stand by the old man for 30 s
+        obs, r, term, trunc, info = env.step(0)
+        total += r
+    assert info["achievements"] == 0 and not term
+    # the macro variant: unlocking a place pays the achievement bonus
+    menv = gym.make("JumpKingCampaignMacro-v0", level=level, content=content)
+    menv.reset(seed=0, options={"profile": "new"})
+    camp = menv.unwrapped.camp
+    x, y, w, h = [r for k, r in content.achievement_hitboxes if k == "REACH_CATHEDRAL"][0][0]
+    camp.game.reset(200, -11520 + 302 - 26, screen=32)
+    obs, r, term, trunc, info = menv.step(menv.unwrapped._macro.index(("walk", 1, 4)))
+    assert "REACH_CATHEDRAL" in info["new_achievements"] and r >= 1.0
+
+
+@pytest.mark.parametrize("key,mode,expected", [
+    ("base", "normal", {"GO_THOUGH_ILLUSORY_WALL", "REACH_CATHEDRAL", "WIN", "WIN_TIME_60",
+                        "WIN_TIME_15", "WIN_NO_FALLS", "WIN_TOUCH_CROW_2"}),
+    ("nbp", "new_babe_plus", {"FIND_IMP_ROOM", "REACH_SEA", "WIN_NBP", "WIN_NBP_NO_FALLS"}),
+    ("ghost", "ghost_of_the_babe", {"TIMESTOP_GARGOYLE_TALK", "WIN_OWL", "WIN_TIME_60_OWL",
+                                    "WIN_TIME_30_OWL", "WIN_OWL_2_FALL"}),
+])
+def test_speedruns_played_in_the_campaign(shared, key, mode, expected):
+    """The real speed-runs, played frame by frame in the full campaign (NPCs,
+    birds, triggers all running), unlock what a real player would get."""
+    from jumpking import tas, verify
+    from jumpking.campaign import Campaign, Profile
+
+    from test_original import _route_text
+
+    level, content = shared
+    route = verify.ROUTES[key]
+    start, inputs = tas.to_inputs(tas.parse(_route_text(route)))
+    prof = Profile()
+    prof.add("Crown")                          # New Babe+: the crown is sacrificed
+    c = Campaign(level=level, content=content, profile=prof,
+                 legacy_teleport=route.legacy_teleport)
+    c.new_game(mode)
+    c.game.reset(start[0], start[1])
+    c.game.state[P.S_FACING] = start[2]
+    c.game.state[P.S_TICK] = route.start_tick
+    c.step(0, False)
+    for d, j in inputs:
+        c.step(d, j)
+        if c.ended:
+            break
+    assert c.ended and c.ending == route.ending
+    assert expected <= c.unlocked

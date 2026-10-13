@@ -13,6 +13,11 @@ def _level(name):
 
 
 def cmd_play(a):
+    if a.campaign:
+        from .play import play_campaign
+
+        play_campaign(a.campaign, profile_path=a.profile, scale=a.scale, hz=a.hz)
+        return
     from .play import play
 
     play(_level(a.level), scale=a.scale, hz=a.hz)
@@ -205,6 +210,9 @@ def main(argv=None):
     add_level(p)
     p.add_argument("--scale", type=int, default=2)
     p.add_argument("--hz", type=float, default=60)
+    p.add_argument("--campaign", choices=["normal", "new_babe_plus", "ghost_of_the_babe"],
+                   help="play the whole game (NPCs, items, achievements; needs the game installed)")
+    p.add_argument("--profile", help="campaign profile file (JSON), loaded and saved on exit")
     p.set_defaults(fn=cmd_play)
 
     p = sub.add_parser("replay", help="watch a .tas recording")

@@ -1053,6 +1053,63 @@ class Campaign:
             self.dynamic = [e for e in self.dynamic if e.alive]
         return ev
 
+    # macro actions, frame by frame (physics.macro_jump / macro_walk / settle)
+    def settle(self, max_ticks=60 * 30):
+        ev = n = 0
+        while n < max_ticks and not self.ended:
+            ev |= self.step(0, False)
+            n += 1
+            if P.is_settled(self.game.state):
+                break
+        return ev, n
+
+    def jump(self, direction, charge, max_ticks=60 * 30):
+        """Charge ``charge`` ticks (power = charge / 36) holding ``direction``,
+        release and wait until landed. Returns (events, ticks)."""
+        s = self.game.state
+        ev = n = 0
+        if s[P.S_JUMP_HELD] > 0:
+            ev |= self.step(direction, False)
+            n += 1
+        if s[P.S_SPLAT] > 0 and s[P.S_SPLAT_DONE] > 0:
+            ev |= self.step(direction, False)
+            n += 1
+        charge = max(2, min(36, int(charge)))
+        target = (charge - 1) * P.DT * (P.WATER_MULTIPLIER if s[P.S_IN_WATER] else 1.0) - 1e-6
+        started = False
+        waited = 0
+        while n < max_ticks and not self.ended:
+            e = self.step(direction, True)
+            ev |= e
+            n += 1
+            if e & P.EV_JUMP:
+                break
+            if s[P.S_CHARGING] > 0:
+                started = True
+                if s[P.S_CHARGE] >= target:
+                    break
+            else:
+                waited += 1
+                if started or waited > 8:
+                    break
+        if not ev & P.EV_JUMP and s[P.S_CHARGING] > 0 and not self.ended:
+            ev |= self.step(direction, False)
+            n += 1
+        e2, n2 = self.settle(max_ticks - n)
+        return ev | e2, n + n2
+
+    def walk(self, direction, ticks, max_ticks=60 * 30):
+        ev = n = 0
+        s = self.game.state
+        if s[P.S_SPLAT] > 0 and s[P.S_SPLAT_DONE] > 0:
+            ev |= self.step(direction, False)
+            n += 1
+        while n < ticks and not self.ended:
+            ev |= self.step(direction, False)
+            n += 1
+        e2, n2 = self.settle(max_ticks - n)
+        return ev | e2, n + n2
+
     def run_inputs(self, inputs):
         ev = 0
         for d, j in inputs:

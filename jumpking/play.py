@@ -10,6 +10,11 @@ F2                        start / stop recording (.tas, saved in ./replays)
 F5 / F9                   save / load a practice state
 PageUp / PageDown         practice: move to the next / previous screen
 Esc                       quit
+
+Campaign mode (``jumpking play --campaign MODE``) plays the whole game with its
+NPCs, merchants, birds, items and achievements. There, R starts a new game, B
+and N toggle the Giant Boots and the Snake Ring (the game's own shortcuts), and
+the profile is saved to ``--profile`` on exit.
 """
 import os
 import time
@@ -49,7 +54,7 @@ class Viewer:
         self.debug = True
         self.trail = []
 
-    def draw(self, extra=None):
+    def draw(self, extra=None, overlay=None):
         pg = self.pg
         frame = self.renderer.frame(self.game.state, trail=self.trail[-240:])
         surf = pg.surfarray.make_surface(frame.swapaxes(0, 1))
@@ -85,7 +90,14 @@ class Viewer:
             msg = self.big.render("You reached the babe!", True, (255, 220, 120))
             r = msg.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 3))
             self.screen.blit(msg, r)
+        if overlay is not None:
+            overlay(self)
         pg.display.flip()
+
+    def text(self, s, x, y, colour=(255, 255, 255), font=None):
+        font = font or self.font
+        self.screen.blit(font.render(s, True, (0, 0, 0)), (x + 1, y + 1))
+        self.screen.blit(font.render(s, True, colour), (x, y))
 
     @staticmethod
     def fmt_time(ticks):
@@ -233,3 +245,90 @@ def snapshot_frames(game, inputs, every=1):
         if i % every == 0:
             frames.append(r.frame(game.state))
     return np.stack(frames) if frames else np.zeros((0, C.SCREEN_H, C.SCREEN_W, 3), np.uint8)
+
+
+def play_campaign(mode="normal", profile_path=None, scale=2, hz=C.FPS):
+    """Play the whole game: NPC dialogue, birds, items and achievements."""
+    from .achievements import BY_CODE
+    from .campaign import Campaign, Merchant, OldMan, Profile, Raven, WorldItem
+
+    profile = Profile.load(profile_path) if profile_path and os.path.isfile(profile_path) else None
+    camp = Campaign(profile=profile)
+    camp.new_game(mode)
+    v = Viewer(camp.game, scale, hz, title="Jump King clone - %s" % mode)
+    pg = v.pg
+    toasts = []
+    saved = None
+
+    def overlay(view):
+        k = view.scale
+        cam = camp.camera
+        top = -C.SCREEN_H * cam
+        for e in camp.entities + camp.dynamic:
+            if not e.alive:
+                continue
+            if isinstance(e, Raven):
+                x, y = float(e.x), float(e.y) - top
+                if 0 <= y < C.SCREEN_H:
+                    col = {"white_raven": (240, 240, 240), "tsuchinoko": (220, 40, 40),
+                           "fly": (60, 200, 60)}.get(e.s.name, (20, 20, 20))
+                    pg.draw.circle(view.screen, col, (int(x * k), int(y * k)), 3 * k)
+            elif isinstance(e, WorldItem) and not e.display_only:
+                x, y, w, h = e.rect
+                if top <= y < top + C.SCREEN_H and w < 480:
+                    pg.draw.rect(view.screen, (255, 215, 0), ((x) * k, (y - top) * k, max(2, w) * k,
+                                                              max(2, h) * k))
+            elif isinstance(e, (OldMan, Merchant)) and e.s.home_screen - 1 == cam:
+                px, py = e.s.real_position()
+                pg.draw.circle(view.screen, (180, 120, 255), (int(px * k), int((py - top) * k) - 8), 4 * k)
+                line = e.talk.bb.get("line", "")
+                if e.busy and line:
+                    view.text(line[:80], 8, view.screen.get_height() - 40, (255, 240, 200))
+        y = view.screen.get_height() - 70
+        for t in list(toasts):
+            view.text("Achievement: " + BY_CODE[t[0]].name, view.screen.get_width() - 330, y,
+                      (255, 220, 120))
+            y -= 18
+        st = camp.run_stats()
+        view.text("%s   achievements %d/48   gold %d  silver %d  rubies %d" % (
+            mode, len(camp.unlocked), camp.profile.count("GoldRing"), camp.profile.count("Silver"),
+            camp.profile.count("Ruby")), 8, view.screen.get_height() - 20)
+
+    running = True
+    while running:
+        for e in pg.event.get():
+            if e.type == pg.QUIT:
+                running = False
+            elif e.type == pg.KEYDOWN:
+                if e.key == pg.K_ESCAPE:
+                    running = False
+                elif e.key == pg.K_r:
+                    camp.new_game(mode)
+                    v.trail.clear()
+                elif e.key == pg.K_F1:
+                    v.debug = not v.debug
+                elif e.key == pg.K_F5:
+                    saved = camp.snapshot()
+                elif e.key == pg.K_F9 and saved is not None:
+                    camp.restore(saved)
+                elif e.key in (pg.K_b, pg.K_n):
+                    item = "GiantBoots" if e.key == pg.K_b else "SnakeRing"
+                    if camp.profile.has(item):
+                        camp.equip(item, not camp.wearing(item))
+        keys = pg.key.get_pressed()
+        d = int(keys[pg.K_RIGHT] or keys[pg.K_d]) - int(keys[pg.K_LEFT] or keys[pg.K_a])
+        j = bool(keys[pg.K_SPACE] or keys[pg.K_UP] or keys[pg.K_w])
+        camp.step(d, j)
+        for code in camp.new_achievements:
+            toasts.append([code, 4 * hz])
+        for t in toasts:
+            t[1] -= 1
+        toasts[:] = [t for t in toasts if t[1] > 0]
+        v.game = camp.game
+        v.trail.append((camp.game.x, camp.game.y))
+        v.draw(overlay=overlay)
+        v.clock.tick(hz)
+    if profile_path:
+        camp.profile.save(profile_path)
+        print("profile saved to", profile_path)
+    pg.quit()

@@ -59,6 +59,7 @@ class RouteProgress:
 
     def __init__(self, route, n=1):
         self.route = np.asarray(route, np.int64)
+        self._list = [int(r) for r in route]
         self.index = np.zeros(n, np.int64)
 
     def reset(self, screens, idx=None):
@@ -71,6 +72,16 @@ class RouteProgress:
 
     def update(self, screens):
         """Advance with the current screens; returns the number of new steps."""
+        if len(self.index) == 1:
+            # scalar fast path (single environments)
+            screen = int(np.asarray(screens).reshape(-1)[0])
+            i = int(self.index[0])
+            route = self._list
+            for k in range(1, 6):
+                if i + k < len(route) and route[i + k] == screen:
+                    self.index[0] = i + k
+                    return np.array([k], np.int64)
+            return np.zeros(1, np.int64)
         screens = np.atleast_1d(np.asarray(screens, np.int64))
         before = self.index.copy()
         n = len(self.route)

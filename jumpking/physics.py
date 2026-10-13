@@ -548,17 +548,46 @@ def _try_screen(tiles, offy, nscr, scr, hx, hy):
 
 
 @_jit
-def check_collision(tiles, offy, nscr, cam, hx, hy):
-    """LevelManager.CheckCollision for the hitbox at integer (hx, hy) with the
-    camera on screen ``cam``: info bits merged as in CheckCollisionInternal."""
-    info2 = _try_screen(tiles, offy, nscr, cam, hx, hy)
-    hit = (info2 & CI_COLL) != 0
-    agg = info2
+def _infos(tiles, offy, nscr, cam, hx, hy):
+    """TryCollision of the screens cam-1, cam, cam+1 (0 for screens that do
+    not exist or that the hitbox's rows do not reach)."""
+    gy = hy + offy
+    r0 = gy // 8
+    r1 = (gy + PH - 1) // 8
+    a = 0
+    b = 0
+    c = 0
+    for k in range(3):
+        scr = cam - 1 + k
+        if scr < 0 or scr >= nscr:
+            continue
+        ra = (nscr - 1 - scr) * 45
+        rb = ra + 44
+        if scr == 0:
+            rb = 1 << 30
+        if r1 < ra or r0 > rb:
+            continue
+        info = _try_rows(tiles, offy, ra, rb, hx, hy, scr == 0)
+        if k == 0:
+            a = info
+        elif k == 1:
+            b = info
+        else:
+            c = info
+    return a, b, c
+
+
+@_jit
+def _merge(nscr, cam, below, here, above):
+    """LevelManager.CheckCollisionInternal: merge the camera screen's info
+    with its neighbours (cam-1 first, then cam+1)."""
+    hit = (here & CI_COLL) != 0
+    agg = here
     for k in range(2):
         i = cam - 1 if k == 0 else cam + 1
         if i < 0 or i >= nscr:
             continue
-        info3 = _try_screen(tiles, offy, nscr, i, hx, hy)
+        info3 = below if k == 0 else above
         if (info3 & CI_COLL) == 0:
             if info3 & CI_SAND:
                 agg |= CI_SAND
@@ -566,7 +595,7 @@ def check_collision(tiles, offy, nscr, cam, hx, hy):
         if not hit:
             # the neighbour becomes the baseline; the camera screen's blocks
             # are added except water and quark
-            agg = info3 | (info2 & CI_FLAGS & ~(CI_WATER | CI_QUARK))
+            agg = info3 | (here & CI_FLAGS & ~(CI_WATER | CI_QUARK))
         else:
             agg |= info3 & CI_FLAGS
             st = (info3 >> CI_SLOPE_SHIFT) & 15
@@ -577,25 +606,29 @@ def check_collision(tiles, offy, nscr, cam, hx, hy):
 
 
 @_jit
+def check_collision(tiles, offy, nscr, cam, hx, hy):
+    """LevelManager.CheckCollision for the hitbox at integer (hx, hy) with the
+    camera on screen ``cam``: info bits merged as in CheckCollisionInternal."""
+    a, b, c = _infos(tiles, offy, nscr, cam, hx, hy)
+    return _merge(nscr, cam, a, b, c)
+
+
+@_jit
 def _any_flag(tiles, offy, nscr, cam, hx, hy, flag):
     """Is ``flag`` set for any of the three screens around the camera
     (LevelManager.GetCollisionInfo / IsInWater)."""
-    for i in range(cam - 1, cam + 2):
-        if i < 0 or i >= nscr:
-            continue
-        if _try_screen(tiles, offy, nscr, i, hx, hy) & flag:
-            return True
-    return False
+    a, b, c = _infos(tiles, offy, nscr, cam, hx, hy)
+    return ((a | b | c) & flag) != 0
 
 
 @_jit
 def _in_wind(tiles, offy, nscr, cam, hx, hy):
     """GetCollisionInfo(...).IsInWind() for a windy camera screen."""
-    if _try_screen(tiles, offy, nscr, cam, hx, hy) & CI_NOWIND:
+    a, b, c = _infos(tiles, offy, nscr, cam, hx, hy)
+    if b & CI_NOWIND:
         return False
-    if cam == 0 and nscr > 1:
-        if _try_screen(tiles, offy, nscr, 1, hx, hy) & CI_NOWIND:
-            return False
+    if cam == 0 and (c & CI_NOWIND):
+        return False
     return True
 
 
@@ -766,9 +799,11 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
     if s[S_BODY_OFF] == 0:
         hx = _trunc(x)
         hy = _trunc(y)
-        # CacheCollisionStateBehaviour
-        in_sand = _any_flag(tiles, offy, nscr, cam, hx, hy, CI_SAND)
-        in_water = _any_flag(tiles, offy, nscr, cam, hx, hy, CI_WATER)
+        # CacheCollisionStateBehaviour (one query serves the sand and water
+        # flags, the wind's no-wind test and the early exit: same position)
+        ia, ib, ic = _infos(tiles, offy, nscr, cam, hx, hy)
+        in_sand = ((ia | ib | ic) & CI_SAND) != 0
+        in_water = ((ia | ib | ic) & CI_WATER) != 0
         # WindVelocityUpdateBehaviour
         wcode = int(wind_en[cam])
         if wcode == 0:
@@ -777,7 +812,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
             s[S_WIND_LATCH] = 1
         snow_eff = on_snow and not ring
         if (not snow_eff) and s[S_WIND_LATCH] > 0 and wcode != 0:
-            if _in_wind(tiles, offy, nscr, cam, hx, hy):
+            if not ((ib & CI_NOWIND) or (cam == 0 and (ic & CI_NOWIND))):
                 vx = f32(vx + wind_velocity(s[S_TICK], s[S_WIND_OFFSET],
                                             params[P_WIND_SCALE], wcode))
         # CacheLastScreenBehaviour
@@ -786,7 +821,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
         lvx = vx
         lvy = vy
         # CollisionCheckEarlyExitBehaviour
-        if check_collision(tiles, offy, nscr, cam, hx, hy) & CI_COLL:
+        if _merge(nscr, cam, ia, ib, ic) & CI_COLL:
             x = f32(x + vx)
             y = f32(y + vy)
         else:
@@ -879,6 +914,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
             touch_y = False
             on_snow = False
             info = check_collision(tiles, offy, nscr, cam, _trunc(x), _trunc(y))
+            final_info = info        # the query at the body's final position
             sand_up = (not in_sand) and vy < 0
             if (info & CI_COLL) or ((info & CI_SAND) and sand_up):
                 touch_y = True
@@ -893,6 +929,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
                     it += 1
                     if not ((nxt & CI_COLL) or ((nxt & CI_SAND) and sand_up)) or it > 4096:
                         break
+                final_info = nxt
                 sl = _slope_of(info)
                 nc = _normal_of(info)
                 if step_y > 0:
@@ -925,6 +962,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
                     if capped:
                         vx = 0.0
                     y = float(int(math.ceil(f32(y / 8.0))) * 8)
+                    final_info = check_collision(tiles, offy, nscr, cam, _trunc(x), _trunc(y))
                 on_ground = False
                 on_ice = False
 
@@ -940,8 +978,7 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
             ice_eff = on_ground if ring else on_ice
             if ice_eff:
                 vx = _move_towards(vx, 0.0, ICE_FRICTION)
-            info = check_collision(tiles, offy, nscr, cam, _trunc(x), _trunc(y))
-            in_sand = (info & CI_SAND) != 0
+            in_sand = (final_info & CI_SAND) != 0
             if in_sand:
                 if vy > SAND_FALL_SPEED:
                     vy = SAND_FALL_SPEED
