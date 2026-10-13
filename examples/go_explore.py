@@ -43,6 +43,8 @@ def main():
     ap.add_argument("--ending", default="normal",
                     choices=["normal", "new_babe_plus", "ghost_of_the_babe"])
     ap.add_argument("--start", default="start", help="start | imp_room (New Babe+)")
+    ap.add_argument("--cell-px", type=int, default=24,
+                    help="cell size: ledges on ice need fine cells to keep their launch spots")
     ap.add_argument("--save-tas")
     args = ap.parse_args()
 
@@ -57,7 +59,7 @@ def main():
         return info["route_progress"] * 360 + local
 
     def add(info, state, actions):
-        c = cell_of(info)
+        c = cell_of(info, args.cell_px)
         e = archive.get(c)
         # prefer reaching a cell with fewer actions
         if e is None or len(actions) < len(e["actions"]):

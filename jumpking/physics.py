@@ -1255,20 +1255,35 @@ def is_settled(s):
 
 
 @_jit
-def settle(s, tiles, wind_en, tp_left, tp_right, params, max_ticks):
-    """Release all inputs and run until the player is settled."""
+def is_landed(s):
+    """Back on the ground and ready for a command, possibly still sliding on
+    ice (macros in ``landed`` mode stop here so momentum can be kept)."""
+    if s[S_GOAL] > 0:
+        return True
+    if s[S_ON_GROUND] == 0 or s[S_CHARGING] > 0 or s[S_KNOCKED] > 0 or s[S_BODY_OFF] > 0:
+        return False
+    if s[S_SPLAT] > 0:
+        return s[S_SPLAT_DONE] > 0
+    return True
+
+
+@_jit
+def settle(s, tiles, wind_en, tp_left, tp_right, params, max_ticks, landed=False):
+    """Release all inputs and run until the player is settled (or, with
+    ``landed``, until he is back on the ground)."""
     ev = 0
     n = 0
     while n < max_ticks:
         ev |= tick(s, 0, 0, tiles, wind_en, tp_left, tp_right, params)
         n += 1
-        if is_settled(s):
+        if is_landed(s) if landed else is_settled(s):
             break
     return ev, n
 
 
 @_jit
-def macro_jump(s, direction, charge, tiles, wind_en, tp_left, tp_right, params, max_ticks):
+def macro_jump(s, direction, charge, tiles, wind_en, tp_left, tp_right, params, max_ticks,
+               landed=False):
     """Charge a jump for ``charge`` ticks (2..36, power = charge/36) with the
     given direction held, release, and wait until landed.
 
@@ -1312,12 +1327,13 @@ def macro_jump(s, direction, charge, tiles, wind_en, tp_left, tp_right, params, 
     if (ev & EV_JUMP) == 0 and s[S_CHARGING] > 0:
         ev |= tick(s, direction, 0, tiles, wind_en, tp_left, tp_right, params)
         n += 1
-    e2, n2 = settle(s, tiles, wind_en, tp_left, tp_right, params, max_ticks - n)
+    e2, n2 = settle(s, tiles, wind_en, tp_left, tp_right, params, max_ticks - n, landed)
     return ev | e2, n + n2
 
 
 @_jit
-def macro_walk(s, direction, ticks, tiles, wind_en, tp_left, tp_right, params, max_ticks):
+def macro_walk(s, direction, ticks, tiles, wind_en, tp_left, tp_right, params, max_ticks,
+               landed=False):
     """Walk for ``ticks`` ticks then wait until settled."""
     ev = 0
     n = 0
@@ -1327,7 +1343,7 @@ def macro_walk(s, direction, ticks, tiles, wind_en, tp_left, tp_right, params, m
     while n < ticks and n < max_ticks:
         ev |= tick(s, direction, 0, tiles, wind_en, tp_left, tp_right, params)
         n += 1
-    e2, n2 = settle(s, tiles, wind_en, tp_left, tp_right, params, max_ticks - n)
+    e2, n2 = settle(s, tiles, wind_en, tp_left, tp_right, params, max_ticks - n, landed)
     return ev | e2, n + n2
 
 

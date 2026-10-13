@@ -35,15 +35,17 @@ def default_actions(wind=False, charges=JUMP_CHARGES, walks=WALK_TICKS):
     return acts
 
 
-def apply_action(game, action):
-    kind, d, v = action
+def apply_action(game, action, landed=False):
+    kind, d, v = action[:3]
+    if len(action) > 3:
+        landed = bool(action[3])
     if kind == "jump":
-        return game.jump(d, v)
+        return game.jump(d, v, landed=landed)
     if kind == "walk":
-        return game.walk(d, v)
+        return game.walk(d, v, landed=landed)
     # wait: idle for v ticks then settle
-    ev = game.run([(0, 0)] * v)
-    e2, n = game.settle()
+    ev = game.run([(0, 0)] * v) if v else 0
+    e2, n = game.settle(landed=landed)
     return ev | e2, v + n
 
 
@@ -56,11 +58,14 @@ def state_key(s, wind_screen, wind_bucket=96):
 
 
 def bfs(game, start_state, success, keep=None, actions=None, max_nodes=20000,
-        max_depth=60, return_path=True):
+        max_depth=60, return_path=True, landed=False):
     """Generic BFS.
 
     success(state) -> bool : goal test on settled states
     keep(state) -> bool    : prune states that leave the region of interest
+    landed                 : nodes are landings (possibly still sliding on ice)
+                             instead of standstills, so momentum can be kept;
+                             actions then carry a 4th element ``True``
     Returns (path, goal_state, n_expanded) where path is a list of actions or
     None when no route was found within the budget.
     """
@@ -86,9 +91,11 @@ def bfs(game, start_state, success, keep=None, actions=None, max_nodes=20000,
             base = states[key]
             for a in actions:
                 game.restore(base)
+                if landed:
+                    a = tuple(a[:3]) + (True,)
                 apply_action(game, a)
                 s = game.state
-                if not P.is_settled(s):
+                if not (P.is_landed(s) if landed else P.is_settled(s)):
                     continue  # timed out mid-air (stuck sliding etc.)
                 if s[P.S_SPLAT] > 0 and s[P.S_SPLAT_DONE] == 0:
                     continue

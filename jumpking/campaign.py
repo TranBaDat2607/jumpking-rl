@@ -823,6 +823,9 @@ class Campaign:
         self.win_stats = None
         self.game.reset(*start)
         self.game.state[P.S_FACING] = -1 if start == START_POSITIONS["imp_room"] else 1
+        # the run clock (it drives the wind) already reads 1 during the first
+        # frame: GameLoop advances it before the player updates
+        self.game.state[P.S_TICK] = 1
         self._sync_items()
         self.frames = 0
         self.run_jumps = 0
@@ -1060,16 +1063,17 @@ class Campaign:
         return ev
 
     # macro actions, frame by frame (physics.macro_jump / macro_walk / settle)
-    def settle(self, max_ticks=60 * 30):
+    def settle(self, max_ticks=60 * 30, landed=False):
         ev = n = 0
+        done = P.is_landed if landed else P.is_settled
         while n < max_ticks and not self.ended:
             ev |= self.step(0, False)
             n += 1
-            if P.is_settled(self.game.state):
+            if done(self.game.state):
                 break
         return ev, n
 
-    def jump(self, direction, charge, max_ticks=60 * 30):
+    def jump(self, direction, charge, max_ticks=60 * 30, landed=False):
         """Charge ``charge`` ticks (power = charge / 36) holding ``direction``,
         release and wait until landed. Returns (events, ticks)."""
         s = self.game.state
@@ -1101,10 +1105,10 @@ class Campaign:
         if not ev & P.EV_JUMP and s[P.S_CHARGING] > 0 and not self.ended:
             ev |= self.step(direction, False)
             n += 1
-        e2, n2 = self.settle(max_ticks - n)
+        e2, n2 = self.settle(max_ticks - n, landed)
         return ev | e2, n + n2
 
-    def walk(self, direction, ticks, max_ticks=60 * 30):
+    def walk(self, direction, ticks, max_ticks=60 * 30, landed=False):
         ev = n = 0
         s = self.game.state
         if s[P.S_SPLAT] > 0 and s[P.S_SPLAT_DONE] > 0:
@@ -1113,7 +1117,7 @@ class Campaign:
         while n < ticks and not self.ended:
             ev |= self.step(direction, False)
             n += 1
-        e2, n2 = self.settle(max_ticks - n)
+        e2, n2 = self.settle(max_ticks - n, landed)
         return ev | e2, n + n2
 
     def run_inputs(self, inputs):

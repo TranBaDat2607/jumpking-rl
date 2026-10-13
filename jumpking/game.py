@@ -93,19 +93,21 @@ class Game:
         arr = np.asarray(inputs, dtype=np.int64).reshape(-1, 2)
         return int(P.run_inputs(self.state, arr[:, 0].copy(), arr[:, 1].copy(), *self._args))
 
-    def jump(self, direction, charge, timeout=DEFAULT_MACRO_TIMEOUT):
+    def jump(self, direction, charge, timeout=DEFAULT_MACRO_TIMEOUT, landed=False):
         """Charge for ``charge`` ticks (2..36), jump, wait until landed.
 
         Returns (events, ticks)."""
-        ev, n = P.macro_jump(self.state, int(direction), int(charge), *self._args, int(timeout))
+        ev, n = P.macro_jump(self.state, int(direction), int(charge), *self._args, int(timeout),
+                             bool(landed))
         return int(ev), int(n)
 
-    def walk(self, direction, ticks, timeout=DEFAULT_MACRO_TIMEOUT):
-        ev, n = P.macro_walk(self.state, int(direction), int(ticks), *self._args, int(timeout))
+    def walk(self, direction, ticks, timeout=DEFAULT_MACRO_TIMEOUT, landed=False):
+        ev, n = P.macro_walk(self.state, int(direction), int(ticks), *self._args, int(timeout),
+                             bool(landed))
         return int(ev), int(n)
 
-    def settle(self, timeout=DEFAULT_MACRO_TIMEOUT):
-        ev, n = P.settle(self.state, *self._args, int(timeout))
+    def settle(self, timeout=DEFAULT_MACRO_TIMEOUT, landed=False):
+        ev, n = P.settle(self.state, *self._args, int(timeout), bool(landed))
         return int(ev), int(n)
 
     # ------------------------------------------------------------ snapshot
