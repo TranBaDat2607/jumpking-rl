@@ -124,7 +124,7 @@ def area_of_screen(screen_index):
     for name, a, b in ALL_AREAS:
         if a <= n <= b:
             return name
-    return "Unknown"
+    return "Empty"
 
 
 # --- optional overrides --------------------------------------------------

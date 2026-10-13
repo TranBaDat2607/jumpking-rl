@@ -80,7 +80,21 @@ def cmd_info(a):
     print("original map    :", find_level_xnb() or "not found (install Jump King to use level='original')")
     lvl = _level(a.level)
     print("level           :", lvl)
-    print("goal (babe)     :", lvl.goal)
+    if lvl.endings:
+        for e in lvl.endings:
+            print("ending          : %-18s screen %d" % (e.name, e.screen + 1))
+    else:
+        print("goal (babe)     :", lvl.goal)
+    if find_game_dir():
+        try:
+            from .content import GameContent
+
+            c = GameContent.load()
+            print("game content    : %d NPCs, %d merchants, %d birds, %d world items, %d strings"
+                  % (len(c.old_men), len(c.merchants), len(c.ravens), len(c.world_items),
+                     len(c.strings)))
+        except Exception as exc:  # pragma: no cover - depends on install
+            print("game content    : unreadable (%s)" % exc)
     names = []
     for n in lvl.area_names:
         if not names or names[-1][0] != n:
@@ -88,6 +102,21 @@ def cmd_info(a):
         names[-1][1] += 1
     for n, k in names:
         print("  %-20s %d screens" % (n, k))
+
+
+def cmd_achievements(a):
+    from .achievements import ACHIEVEMENTS
+
+    unlocked = {}
+    if a.profile:
+        from .campaign import Profile
+
+        unlocked = Profile.load(a.profile).achievements
+    for i, ach in enumerate(ACHIEVEMENTS, 1):
+        mark = "x" if ach.code in unlocked else " "
+        print("[%s] %2d %-36s %-28s %s" % (mark, i, ach.code, ach.name, ach.how))
+    if a.profile:
+        print("%d / %d unlocked" % (len(unlocked), len(ACHIEVEMENTS)))
 
 
 def cmd_benchmark(a):
@@ -169,7 +198,8 @@ def main(argv=None):
 
     def add_level(p):
         p.add_argument("--level", default="auto",
-                       help="builtin | original | auto (original if installed) | path to .png/.xnb")
+                       help="builtin | original | original-base | auto (original if installed) | "
+                            "path to .png/.xnb")
 
     p = sub.add_parser("play", help="play with the keyboard")
     add_level(p)
@@ -199,6 +229,10 @@ def main(argv=None):
     p = sub.add_parser("info", help="environment / level information")
     add_level(p)
     p.set_defaults(fn=cmd_info)
+
+    p = sub.add_parser("achievements", help="the 48 Steam achievements and how to unlock them")
+    p.add_argument("--profile", help="a saved campaign profile (JSON) to show progress")
+    p.set_defaults(fn=cmd_achievements)
 
     p = sub.add_parser("benchmark", help="simulation speed")
     add_level(p)

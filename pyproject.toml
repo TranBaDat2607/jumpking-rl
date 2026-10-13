@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jumpking-rl"
 version = "0.2.0"
-description = "A tick-exact Jump King (base game) simulator with Gymnasium environments for reinforcement learning"
+description = "A tick-exact Jump King simulator (base game, New Babe+, Ghost of the Babe and all 48 achievements) with Gymnasium environments for reinforcement learning"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Tran Ba Dat"}]
@@ -29,6 +29,7 @@ dependencies = [
     "numba>=0.57",
     "gymnasium>=1.0",
     "pillow>=9",
+    "dnfile>=0.14",
 ]
 
 [project.optional-dependencies]
