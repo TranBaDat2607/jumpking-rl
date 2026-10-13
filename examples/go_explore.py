@@ -74,7 +74,9 @@ def main():
     for it in range(args.iterations):
         cells = list(archive.values())
         # selection: favour rarely visited and high cells
-        w = np.array([1.0 / np.sqrt(e["visits"] + 1) + 2.0 * (e["score"] >= best_h - 360)
+        # novelty-weighted: cells near the frontier are favoured, but the
+        # favour fades with visits so dead ends do not starve the search
+        w = np.array([(1.0 + 2.0 * (e["score"] >= best_h - 360)) / np.sqrt(e["visits"] + 1)
                       for e in cells])
         e = cells[int(rng.choice(len(cells), p=w / w.sum()))]
         e["visits"] += 1

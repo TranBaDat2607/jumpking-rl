@@ -837,6 +837,7 @@ class Campaign:
     def _spawn_entities(self):
         """IntroState.InitializeEntities + PropManager.Load, in creation order."""
         c = self.content
+        self.dynamic = []            # entities created during the run update first
         ents = []
         for r in c.ravens:
             ents.append(Raven(self, r))
@@ -852,7 +853,6 @@ class Campaign:
         for code, rects in c.achievement_hitboxes:
             ents.append(Trigger(self, code, rects))
         self.entities = [e for e in ents if e.alive]
-        self.dynamic = []            # entities created during the run update first
 
     def spawn_world_item(self, state):
         self.run.world_items.append(state)
@@ -1016,10 +1016,16 @@ class Campaign:
         if self.ended:
             return 0
         prof = self.profile
-        # GameLoop: the achievement clock, then (inside the kernel) the win check
+        # GameLoop: the achievement clock, then the win check on last frame's state
         prof.ticks += 1
         self.frames += 1
         self._check_skin_combo()
+        if P.check_endings(self.game.state, self.game.params):
+            ev = self.game.step(direction, jump)      # the kernel reports the win
+            self.ended = True
+            self.ending = int(self.game.state[P.S_ENDING])
+            self._on_victory(self.ending)
+            return ev
         # dynamic entities (created this run) update first: they were added last
         for e in reversed(self.dynamic):
             if e.alive:
