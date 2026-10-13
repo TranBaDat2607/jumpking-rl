@@ -131,3 +131,14 @@ def test_original_map_if_installed():
     assert lvl.n_screens >= 43
     # the start position stands on the floor of screen 1 (from the TAS)
     assert lvl.collides(231, 303) and not lvl.collides(231, 302)
+
+
+def test_achievements_match_the_steam_schema():
+    """The 48 codes, names and descriptions equal Steam's schema for the app
+    (the data SteamDB displays), read from a local Steam client."""
+    from jumpking.achievements import ACHIEVEMENTS, steam_schema
+
+    schema = steam_schema()
+    if schema is None:
+        pytest.skip("no Steam stats schema cached for Jump King")
+    assert sorted(schema) == sorted((a.code, a.name, a.description) for a in ACHIEVEMENTS)

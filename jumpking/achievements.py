@@ -1,7 +1,9 @@
 """The 48 Steam achievements of Jump King (app 1061090).
 
 Codes and their order are the game's ``AchievementCode`` enum (the Steam API
-names); display names and descriptions are the store's. ``how`` summarises the
+names); display names and descriptions are Steam's achievement schema for the
+app (what SteamDB's stats page shows; ``steam_schema()`` reads it from a local
+Steam client's cache, spelling included). ``how`` summarises the
 exact unlock rule from the game's code (``AchievementManager`` and the
 entities that call ``AchievementRegister.RegisterAchievement``).
 """
@@ -58,23 +60,23 @@ ACHIEVEMENTS = (
     Achievement("FIND_IMP_ROOM", "Off the Beaten Path", "Find the room of The Imp.",
                 "touch screen 45 (Bargainburg's side passage)"),
     Achievement("WIN_GIANTBOOTS_REGULAR", "Giant Leaps",
-                "Complete game with giant boots. (Begin at Redcrown Woods)",
+                "Complete game with giant boots.",
                 "normal ending wearing the Giant Boots since screen 1"),
     Achievement("WIN_GIANTBOOTS_NBP", "Giant Leaps+",
-                "Complete NB+ with giant boots. (Begin at Redcrown Woods)",
+                "Complete NB+ with giant boots.",
                 "New Babe+ ending wearing the Giant Boots since screen 1"),
     Achievement("WIN_ICERING_REGULAR", "Absolute Will",
-                "Complete the game with Snake Ring. (Begin at Redcrown Woods)",
+                "Complete the game with Snake Ring.",
                 "normal ending wearing the Snake Ring since screen 1"),
     Achievement("WIN_ICERING_NPB", "Absolute Will+",
-                "Complete NB+ with Snake Ring. (Begin at Redcrown Woods)",
+                "Complete NB+ with Snake Ring.",
                 "New Babe+ ending wearing the Snake Ring since screen 1"),
     Achievement("WIN_NBP", "New King+", "Complete New Babe+.", "reach the babe on screen 100"),
     Achievement("WIN_NBP_NO_FALLS", "Mad King", "Complete New Babe+ without falling.",
                 "New Babe+ ending without a splat"),
     Achievement("BUY_GIANTBOOTS", "Large Feet", "Purchase the Giant Boots.",
                 "buy the Giant Boots from the merchant on screen 71 (silver coins)"),
-    Achievement("BUY_ICERING", "Favour of a Higher Being", "Receive the Snake Ring",
+    Achievement("BUY_ICERING", "Favour of a Higher Being", "Recieve the Snake Ring",
                 "buy the Snake Ring from the snake on screen 88 (a ruby)"),
     Achievement("REACH_SEA", "Blue Ordeal", "Reach Deep Ruin.",
                 "touch the top of screen 90"),
@@ -84,12 +86,12 @@ ACHIEVEMENTS = (
                 "Wear the Snake Ring and the giant boots at the same time.",
                 "wear the Giant Boots and the Snake Ring"),
     Achievement("WIN_GIANTBOOTS_OWL", "Giant Leaps Ghost",
-                "Complete Ghost of the Babe with giant boots. (Begin at Redcrown Woods)",
+                "Complete Ghost of the Babe with giant boots.",
                 "Ghost of the Babe ending wearing the Giant Boots since screen 1"),
     Achievement("WIN_ICERING_OWL", "Absolute Will Ghost",
-                "Complete Ghost of the Babe with Snake Ring. (Begin at Redcrown Woods)",
+                "Complete Ghost of the Babe with Snake Ring.",
                 "Ghost of the Babe ending wearing the Snake Ring since screen 1"),
-    Achievement("GET_OWLCAPE", "Regal Attire", "Receive the King's Cape.",
+    Achievement("GET_OWLCAPE", "Regal Attire", "Recieve the King's Cape.",
                 "Ghost of the Babe ending after chasing the red bird (tsuchinoko) to its end"),
     Achievement("WIN_OWL", "Exorcist King", "Complete Ghost of the Babe.",
                 "reach the babe on screen 154"),
@@ -124,5 +126,64 @@ ACHIEVEMENTS = (
 )
 
 CODES = tuple(a.code for a in ACHIEVEMENTS)
+
+
+def steam_schema(path=None):
+    """[(code, name, description)] from the Steam client's cached stats schema
+    (``Steam/appcache/stats/UserGameStatsSchema_1061090.bin``), or None."""
+    import os
+    import struct
+
+    if path is None:
+        from .xnb import _steam_roots
+
+        for root in _steam_roots():
+            cand = os.path.join(root, "appcache", "stats", "UserGameStatsSchema_1061090.bin")
+            if os.path.isfile(cand):
+                path = cand
+                break
+    if path is None or not os.path.isfile(path):
+        return None
+    data = open(path, "rb").read()
+
+    def cstr(p):
+        e = data.index(b"\0", p)
+        return data[p:e].decode("utf-8", "replace"), e + 1
+
+    def parse(p):          # binary KeyValues
+        out = {}
+        while True:
+            t = data[p]
+            p += 1
+            if t == 8:
+                return out, p
+            name, p = cstr(p)
+            if t == 0:
+                out[name], p = parse(p)
+            elif t == 1:
+                out[name], p = cstr(p)
+            elif t in (2, 3):
+                out[name] = struct.unpack_from("<i" if t == 2 else "<f", data, p)[0]
+                p += 4
+            elif t == 7:
+                out[name] = struct.unpack_from("<Q", data, p)[0]
+                p += 8
+            else:
+                raise ValueError("unknown KeyValues type %d" % t)
+
+    found = []
+
+    def walk(d):
+        for v in d.values():
+            if isinstance(v, dict):
+                if "name" in v and "display" in v:
+                    disp = v["display"]
+                    found.append((v["name"], disp.get("name", {}).get("english"),
+                                  disp.get("desc", {}).get("english")))
+                else:
+                    walk(v)
+
+    walk(parse(0)[0])
+    return found
 BY_CODE = {a.code: a for a in ACHIEVEMENTS}
 assert len(CODES) == 48 and len(set(CODES)) == 48
