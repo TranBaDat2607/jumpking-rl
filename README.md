@@ -130,9 +130,17 @@ frame like the real thing:
 | Progress | run statistics (time, jumps, falls), lifetime statistics, story flags, the endings' crowns and the owl cape, a persistent profile (JSON) |
 
 All 48 achievements are implemented with the game's exact rules
-(`jumpking achievements` lists them). `tests/test_campaign.py` unlocks every
-one of them on a single profile over a series of runs, and replays the three
-real speed-runs inside the campaign. That replay unlocks what a player of
+(`jumpking achievements` lists them, checked against Steam's own schema for
+the app). `scripts/achievement_run.py` then *plays* the game from a new
+profile to all 48 with button inputs only, run after run from the title menu,
+the way a player would: the community speed-runs where they fit, and routes
+found by `jumpking.planner` (BFS over jumps and walks on the exact physics)
+for the rest. The king is never placed or teleported. The saved playthrough
+(`jumpking/data/playthrough_all48.json`) is replayed by
+`tests/test_playthrough.py`; see the [RL guide](docs/RL_GUIDE.md#a-playthrough-to-all-48).
+`tests/test_campaign.py` also unlocks every achievement on a single profile
+with the king placed next to each trigger, and replays the three real
+speed-runs inside the campaign. That replay unlocks what a player of
 those runs really gets; for example, the base-game run scares the raven
 exactly twice (*Fool me Twice...*) and the Ghost of the Babe run has exactly
 two falls (*Nobody's Perfect*).
@@ -234,7 +242,8 @@ Run `jumpking benchmark` to measure your own machine.
 | --- | --- | --- |
 | Random macro actions | original / built-in | screens 1–2 |
 | PPO, 14 s of training (v0.2.0) | original (base game) | mean return 0.01 → 0.18; best height screen 3 |
-| Go-Explore (`examples/go_explore.py`), route-scored cells | original world, normal ending | reaches screen 38 (Blue Ruin) in 10 min, then its archive stalls; under v0.2 physics the same search beat the game in 132 s |
+| Go-Explore (`examples/go_explore.py --landed`), route-scored cells keyed by speed | original world, normal ending | beats the game in 18 min (591 macro actions, 8:54 of game time) |
+| Go-Explore with standstill macros | original world, normal ending | stalls on screen 38 (Blue Ruin): its route carries an ice slide into the next jump, which a macro that waits for a standstill cannot do |
 | Go-Explore | built-in | beats the map in 46 s |
 
 The PPO row only shows that the training pipeline works. Solving Jump King
@@ -243,6 +252,7 @@ with RL alone remains an open challenge.
 ```bash
 python scripts/train_ppo.py --timesteps 5e6 --n-envs 64     # PPO on the batched env, TensorBoard in runs/
 python scripts/evaluate.py --model runs/<name>/final_model.zip --episodes 20 --save-tas best.tas
+python examples/go_explore.py --landed --iterations 400000 --save-tas route.tas
 python examples/go_explore.py --ending new_babe_plus --start imp_room --save-tas route.tas
 jumpking replay route.tas                                   # watch any recording
 ```
@@ -293,15 +303,18 @@ jumpking/
   game.py         high-level API
   batch.py        batched simulator
   solver.py       BFS over landings
+  planner.py      routes to goals in the campaign, played frame by frame; playthrough replay
   mapgen.py       physics-driven map generator
   render.py       numpy renderer
   play.py         pygame viewer (and campaign mode)
   tas.py          recordings
   cli.py          `jumpking` command
-scripts/          train_ppo, evaluate, validate_original, extract_constants, build_map
+scripts/          train_ppo, evaluate, validate_original, extract_constants, build_map,
+                  achievement_run (a playthrough from new games to all 48 achievements)
 examples/         go_explore
-tests/            111 tests: physics and DLC mechanics, IO, envs, batching, map solvability,
-                  original-game parity on all three stories, all 48 achievements
+tests/            113 tests: physics and DLC mechanics, IO, envs, batching, map solvability,
+                  original-game parity on all three stories, all 48 achievements,
+                  a playthrough from new games to all 48 replayed input by input
 docs/             RESEARCH.md (mechanics + sources), RL_GUIDE.md (API reference)
 ```
 

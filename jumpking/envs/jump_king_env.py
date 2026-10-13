@@ -128,7 +128,7 @@ class JumpKingEnv(gym.Env):
                  start="start", max_start_screen=None, wind_phase="random",
                  splat_time=C.SPLAT_TIME, image_size=(90, 120),
                  macro_timeout=60 * 20, giant_boots=False, snake_ring=False,
-                 render_mode=None):
+                 landed_macros=False, render_mode=None):
         super().__init__()
         if isinstance(level, str):
             level = Level.load(level)
@@ -152,6 +152,7 @@ class JumpKingEnv(gym.Env):
         self.wind_phase = wind_phase
         self.image_size = tuple(image_size)
         self.macro_timeout = int(macro_timeout)
+        self.landed_macros = bool(landed_macros)
         self.render_mode = render_mode
         if max_episode_steps is None:
             max_episode_steps = 2000 if action_mode == "macro" else (60 * 60 * 20) // self.frame_skip
@@ -358,9 +359,9 @@ class JumpKingEnv(gym.Env):
         if self.action_mode == "macro":
             kind, d, v = self._macro[action]
             if kind == "jump":
-                events, ticks = g.jump(d, v, timeout=self.macro_timeout)
+                events, ticks = g.jump(d, v, timeout=self.macro_timeout, landed=self.landed_macros)
             else:
-                events, ticks = g.walk(d, v, timeout=self.macro_timeout)
+                events, ticks = g.walk(d, v, timeout=self.macro_timeout, landed=self.landed_macros)
         else:
             d, j = FRAME_ACTIONS[action]
             events = g.run([(d, 1 if j else 0)] * self.frame_skip)

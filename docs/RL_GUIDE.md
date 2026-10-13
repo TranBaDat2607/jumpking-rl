@@ -13,7 +13,7 @@
 | `step_penalty` | `0.0` | subtracted every step |
 | `max_episode_steps` | 2000 (macro) or 20 min of ticks (frame) | truncation limit |
 | `frame_skip` | `4` | ticks per frame-mode action |
-| `charges` | `2..36` | jump charge ticks offered in macro mode (power = charge / 36) |
+| `charges` | `2..36` | jump charges offered in macro mode (power = charge / 36; in water the same power takes twice as many ticks) |
 | `walk_ticks` | `(4, 8, 16, 32)` | walk durations offered in macro mode |
 | `start` | `"start"` | `"start"`, `"imp_room"` (New Babe+'s crown-sacrifice start), `"random_screen"`, a screen index, or a list of indices |
 | `max_start_screen` | last screen | upper bound for `"random_screen"` |
@@ -21,6 +21,7 @@
 | `splat_time` | `0.5` | splat recovery time in grounded seconds (the game's value) |
 | `image_size` | `(90, 120)` | `rgb` observation size |
 | `macro_timeout` | `1200` | maximum ticks per macro action |
+| `landed_macros` | `False` | a macro ends when the king lands, even while he still slides on ice, instead of when he stands still; the next jump then keeps the slide's momentum (Blue Ruin needs this) |
 | `giant_boots`, `snake_ring` | `False` | wear the items (their physics: no walking and a landing freeze; icy floors and no snow) |
 | `render_mode` | `None` | `"rgb_array"` or `"human"` |
 
@@ -138,8 +139,14 @@ whose layout is given by the `S_*` indices in `jumpking/physics.py`.
 
 - **Go-Explore and archive methods.** `examples/go_explore.py` (cells scored
   by route progress, `--ending` picks the babe) solves the built-in map in
-  about a minute.
-- **MCTS and other planners.**
+  about a minute, and with `--landed` (landed macros, cells keyed by speed)
+  the original game's normal ending in about 18 minutes.
+- **MCTS and other planners.** `jumpking.planner.Planner` runs `solver.bfs`
+  from the campaign's state to goals such as "stand on screen k", "touch this
+  box" or "come near this bird", then plays the route frame by frame.
+  `solver.bfs(..., landed=True, cell=(8, 1.0))` searches landed states with
+  coarse deduplication, which finds momentum routes on ice that the default
+  fine key runs out of nodes before reaching.
 - **Resets in the middle of a level.**
 - **Collecting demonstrations.** `jumpking.solver.bfs` finds exact action
   sequences between states.
@@ -264,3 +271,30 @@ c.profile.save("save.json")
 `jumpking achievements [--profile save.json]` lists the 48 achievements with
 their exact unlock rules, and `jumpking play --campaign MODE --profile
 save.json` plays the campaign with the keyboard.
+
+### A playthrough to all 48
+
+`scripts/achievement_run.py` plays the game from a new profile to all 48
+achievements with button inputs only, run after run from the title menu's
+New Game / New Babe+ / Ghost of the Babe: the community speed-runs where they
+fit, and `Planner` routes for everything else (talking to NPCs, chasing the
+birds, collecting and buying items, the Giant Boots and Snake Ring runs, the
+20,000 jumps and 1,000 falls). The result is saved as a list of runs, each a
+mode, the pause-menu equipment changes before it and the logged actions
+(`jump`, `walk`, `wait`, `frames`, `tas`, `equip`, `repeat`), and
+`jumpking.planner.replay` plays it back on any `Campaign`:
+
+```python
+import json
+from jumpking.campaign import Campaign
+from jumpking.planner import replay
+
+runs = json.load(open("jumpking/data/playthrough_all48.json"))["runs"]
+c = replay(Campaign(), runs)
+assert len(c.unlocked) == 48
+```
+
+Speed-run inputs are not copied into the file: a `["tas", key, first, last]`
+action refers to frames of a route in `jumpking.verify.ROUTES`, read from
+`$JUMPKING_TAS_DIR` or downloaded from ShootMe/JumpKingTAS.
+`tests/test_playthrough.py` replays the saved playthrough.

@@ -11,6 +11,7 @@ demonstration for imitation learning.
     python examples/go_explore.py --iterations 20000 --save-tas best.tas
     python examples/go_explore.py --ending new_babe_plus --start imp_room
     python examples/go_explore.py --ending ghost_of_the_babe
+    python examples/go_explore.py --landed      # keep ice momentum between macros
 
 Cells are scored by progress along the route of the chosen ending (the
 order of screens of ``jumpking.routes``), then by height within the screen:
@@ -30,8 +31,11 @@ from jumpking import physics as P  # noqa: E402
 from jumpking.envs import JumpKingEnv  # noqa: E402
 
 
-def cell_of(info, cell_px=48):
-    return (info["screen"], int(info["x"]) // cell_px, int(info["y"]) // cell_px)
+def cell_of(info, cell_px=48, cell_v=None):
+    c = (info["screen"], int(info["x"]) // cell_px, int(info["y"]) // cell_px)
+    if cell_v:
+        c += (int(round(info["vx"] / cell_v)),)
+    return c
 
 
 def main():
@@ -45,12 +49,18 @@ def main():
     ap.add_argument("--start", default="start", help="start | imp_room (New Babe+)")
     ap.add_argument("--cell-px", type=int, default=24,
                     help="cell size: ledges on ice need fine cells to keep their launch spots")
+    ap.add_argument("--landed", action="store_true",
+                    help="macros end on landing, still sliding (ice): Blue Ruin's route needs "
+                         "a slide carried into the next jump; cells then also key the speed")
+    ap.add_argument("--cell-v", type=float, default=1.0,
+                    help="speed bucket (px/tick) of a cell with --landed")
     ap.add_argument("--save-tas")
     args = ap.parse_args()
+    cell_v = args.cell_v if args.landed else None
 
     rng = np.random.default_rng(args.seed)
     env = JumpKingEnv(level=args.level, max_episode_steps=10**9, wind_phase=0.0,
-                      ending=args.ending, start=args.start)
+                      ending=args.ending, start=args.start, landed_macros=args.landed)
     obs, info = env.reset(seed=args.seed)
     archive = {}  # cell -> dict(state, score, actions, visits)
 
@@ -59,7 +69,7 @@ def main():
         return info["route_progress"] * 360 + local
 
     def add(info, state, actions):
-        c = cell_of(info, args.cell_px)
+        c = cell_of(info, args.cell_px, cell_v)
         e = archive.get(c)
         # prefer reaching a cell with fewer actions
         if e is None or len(actions) < len(e["actions"]):
@@ -122,7 +132,7 @@ def main():
         g.params[:] = env.game.params
         g.restore(env.get_state())
         start = g.snapshot()
-        inputs = tas.macro_to_inputs(g, best_actions)
+        inputs = tas.macro_to_inputs(g, best_actions, landed=args.landed)
         tas.save(args.save_tas, inputs, header="go-explore", state=start)
         print("saved", args.save_tas)
 

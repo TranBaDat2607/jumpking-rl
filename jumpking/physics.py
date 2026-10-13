@@ -178,6 +178,7 @@ EV_SLOPE = 512
 EV_GETUP = 1024
 EV_WATER = 2048      # entered or left water
 EV_SAND = 4096       # inside sand this tick
+EV_TOUCH = 8192      # the hitbox overlaps the planning rectangle P_TOUCH
 
 # level parameter vector layout
 P_SPLAT_TIME = 0
@@ -197,7 +198,11 @@ MAX_ENDINGS = 3
 # BodyComp behaviour rewrite, e.g. the 2019 community TAS routes); 0 = the
 # current game, which truncates y to an integer (HandlePlayerTeleportBehaviour)
 P_LEGACY_TELEPORT = P_ENDINGS + ENDING_STRIDE * MAX_ENDINGS
-PARAM_SIZE = P_LEGACY_TELEPORT + 1
+# a rectangle (x, y, w, h) that raises EV_TOUCH while the hitbox overlaps it
+# (w = 0: off). A planning aid with no effect on the simulation: searches use
+# it to find jumps that touch an item in mid-air
+P_TOUCH = P_LEGACY_TELEPORT + 1
+PARAM_SIZE = P_TOUCH + 4
 
 # module-level float32 constants (numba freezes globals as constants)
 GRAVITY = C.GRAVITY
@@ -1225,6 +1230,14 @@ def tick(s, d, jump, tiles, wind_en, tp_left, tp_right, params):
     s[S_IN_SAND] = 1 if in_sand else 0
     s[S_SCREEN] = cam
     s[S_TICK] += 1
+    if params[P_TOUCH + 2] > 0:
+        hx = _trunc(x)
+        hy = _trunc(y)
+        tx = params[P_TOUCH]
+        ty = params[P_TOUCH + 1]
+        if (tx < hx + PW and hx < tx + params[P_TOUCH + 2]
+                and ty < hy + PH and hy < ty + params[P_TOUCH + 3]):
+            ev |= EV_TOUCH
     s[S_LAST_EVENTS] = ev
     return ev
 
@@ -1239,11 +1252,19 @@ def run_inputs(s, dirs, jumps, tiles, wind_en, tp_left, tp_right, params):
 
 
 @_jit
+def _grounded(s):
+    """On the ground, or sinking in quicksand: the IsOnGround node counts sand
+    as ground, so a jump can be charged there."""
+    return s[S_ON_GROUND] > 0 or (s[S_IN_SAND] > 0 and s[S_VY] >= 0)
+
+
+@_jit
 def is_settled(s):
-    """Standing still on solid ground and ready for the next command."""
+    """Standing still on solid ground (or sinking in quicksand) and ready for
+    the next command."""
     if s[S_GOAL] > 0:
         return True
-    if s[S_ON_GROUND] == 0 or s[S_CHARGING] > 0 or s[S_KNOCKED] > 0:
+    if not _grounded(s) or s[S_CHARGING] > 0 or s[S_KNOCKED] > 0:
         return False
     if s[S_BODY_OFF] > 0:
         return False
@@ -1260,7 +1281,7 @@ def is_landed(s):
     ice (macros in ``landed`` mode stop here so momentum can be kept)."""
     if s[S_GOAL] > 0:
         return True
-    if s[S_ON_GROUND] == 0 or s[S_CHARGING] > 0 or s[S_KNOCKED] > 0 or s[S_BODY_OFF] > 0:
+    if not _grounded(s) or s[S_CHARGING] > 0 or s[S_KNOCKED] > 0 or s[S_BODY_OFF] > 0:
         return False
     if s[S_SPLAT] > 0:
         return s[S_SPLAT_DONE] > 0
@@ -1303,10 +1324,11 @@ def macro_jump(s, direction, charge, tiles, wind_en, tp_left, tp_right, params, 
     if charge > 36:
         charge = 36
     # hold until charge-1 increments are accumulated; the release tick adds
-    # the last one, so power = charge / 36 (charge 36 auto-releases)
+    # the last one, so power = charge / 36 (charge 36 auto-releases). In
+    # water a tick adds half an increment: the same power takes twice as long
     target = (charge - 1) * DT - 1e-6
     if s[S_IN_WATER] > 0:
-        target = (charge - 1) * DT * WATER_MULTIPLIER - 1e-6
+        target = (charge - WATER_MULTIPLIER) * DT - 1e-6
     started = False
     waited = 0
     while n < max_ticks:

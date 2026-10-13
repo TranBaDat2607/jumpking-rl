@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **A playthrough to all 48 achievements.** `scripts/achievement_run.py`
+  plays from a new profile to every achievement with button inputs only, run
+  after run from new games, and saves it
+  (`jumpking/data/playthrough_all48.json`); `tests/test_playthrough.py`
+  replays it. Speed-run inputs are referenced (`["tas", key, first, last]`,
+  `planner.tas_frames`), not copied.
+- `jumpking.planner`: `Planner` (BFS routes to goals, played frame by frame in
+  the campaign; `tas` and `repeat` actions) and `replay`.
+- `solver.bfs(..., cell=(px, v))`: coarse deduplication for landed-mode
+  searches; it finds Blue Ruin's ice-momentum route in a few hundred nodes.
+- `JumpKingEnv(landed_macros=True)`, `examples/go_explore.py --landed`
+  (landed macros, cells keyed by speed): Go-Explore now beats the original
+  game's normal ending (18 min) instead of stalling on screen 38.
+- `tas.macro_to_inputs(..., landed=True)`.
+- `physics.P_TOUCH` / `EV_TOUCH`: an optional planning rectangle that raises
+  an event while the hitbox overlaps it, and `solver.bfs(..., touch=rect)`:
+  items are picked up in mid-air, so a search can now aim for a jump that
+  passes through one (some mushrooms sit in alcoves you cannot stand in).
+- `Planner.stays(goal)`: a landing only reaches a screen if the king, left
+  alone, comes to rest there (with the Snake Ring and the Giant Boots' landing
+  freeze some landings slide straight off the ledge).
+
+### Fixed
+- Macro jumps in water: `charge` now means power `charge / 36` there too
+  (twice as many ticks of charging); it used to cap water jumps at half power,
+  which made Deep Ruin's screen 90 impossible for the macros.
+- Macros end in quicksand: `is_settled` / `is_landed` count sinking in sand
+  as ground, as the game's `IsOnGround` node does (a jump can be charged
+  there). Before, every macro into Halted Ruin's sand timed out.
+
 ## [0.3.0] - 2026-10-13
 
 ### Added

@@ -1074,8 +1074,9 @@ class Campaign:
         return ev, n
 
     def jump(self, direction, charge, max_ticks=60 * 30, landed=False):
-        """Charge ``charge`` ticks (power = charge / 36) holding ``direction``,
-        release and wait until landed. Returns (events, ticks)."""
+        """Charge a jump of power ``charge`` / 36 (``charge`` ticks, twice as
+        many in water) holding ``direction``, release and wait until landed.
+        Returns (events, ticks)."""
         s = self.game.state
         ev = n = 0
         if s[P.S_JUMP_HELD] > 0:
@@ -1085,7 +1086,8 @@ class Campaign:
             ev |= self.step(direction, False)
             n += 1
         charge = max(2, min(36, int(charge)))
-        target = (charge - 1) * P.DT * (P.WATER_MULTIPLIER if s[P.S_IN_WATER] else 1.0) - 1e-6
+        # as physics.macro_jump: power charge / 36, twice as long in water
+        target = ((charge - P.WATER_MULTIPLIER) if s[P.S_IN_WATER] else (charge - 1)) * P.DT - 1e-6
         started = False
         waited = 0
         while n < max_ticks and not self.ended:
