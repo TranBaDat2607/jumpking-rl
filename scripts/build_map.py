@@ -1,4 +1,4 @@
-"""Regenerate the built-in map (jumpking/data/level.png + level_meta.json)."""
+"""Regenerate the built-in map (jumpking/data/level.png + level_meta.json + docs/images/map.png)."""
 import argparse
 import os
 import sys
@@ -22,6 +22,9 @@ def main():
     mapgen.save(level, route, args.out_png, args.out_meta, args.seed)
     print("built %r with %d route actions in %.1fs -> %s" % (
         level, len(route), time.time() - t, args.out_png))
+    overview = mapgen.save_overview(level)
+    if overview:
+        print("overview ->", overview)
 
 
 if __name__ == "__main__":

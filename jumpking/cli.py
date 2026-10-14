@@ -195,6 +195,9 @@ def cmd_build_map(a):
     level, route = mapgen.build(seed=a.seed, verbose=True)
     mapgen.save(level, route, BUILTIN_PNG, BUILTIN_META, a.seed)
     print("saved", BUILTIN_PNG)
+    overview = mapgen.save_overview(level)
+    if overview:
+        print("saved", overview)
 
 
 def main(argv=None):

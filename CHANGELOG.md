@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format follows
 - `Planner.stays(goal)`: a landing only reaches a screen if the king, left
   alone, comes to rest there (with the Snake Ring and the Giant Boots' landing
   freeze some landings slide straight off the ledge).
+- `scripts/build_map.py` and `jumpking build-map` also re-render the README's
+  built-in map overview (`docs/images/map.png`, `mapgen.save_overview`), and
+  `tests/test_builtin_map.py` fails when it is stale. The README shows the
+  overview instead of folding it away.
 
 ### Fixed
 - Macro jumps in water: `charge` now means power `charge / 36` there too

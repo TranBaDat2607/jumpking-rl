@@ -12,6 +12,7 @@ Run ``python scripts/build_map.py`` to regenerate ``jumpking/data/level.png``.
 """
 import json
 import math
+import os
 
 import numpy as np
 
@@ -613,3 +614,26 @@ def save(level, route, png_path, meta_path, seed):
     }
     with open(meta_path, "w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=1)
+
+
+# README's "Built-in map overview"; only present in a source checkout
+OVERVIEW_PNG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "docs", "images", "map.png")
+OVERVIEW_SCALE = 0.25
+
+
+def render_overview(level):
+    """The overview image of all screens (bottom-left = screen 1)."""
+    from .render import Renderer
+
+    return Renderer(level).map_preview(scale=OVERVIEW_SCALE)
+
+
+def save_overview(level, path=OVERVIEW_PNG):
+    """Re-render the overview; skipped (returns None) outside a source checkout."""
+    from .render import save_image
+
+    if not os.path.isdir(os.path.dirname(path)):
+        return None
+    save_image(render_overview(level), path)
+    return path

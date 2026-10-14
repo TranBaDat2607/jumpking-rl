@@ -1,6 +1,9 @@
 import json
+import os
 
 import numpy as np
+import pytest
+from PIL import Image
 
 from jumpking import Game, Level, constants as C, mapgen, solver, tas
 from jumpking.level import BUILTIN_META
@@ -18,6 +21,14 @@ def test_builtin_map_shape():
     assert [i + 1 for i in np.nonzero(lvl.wind)[0]] == list(range(26, 33))
     # start position stands on the floor of screen 1
     assert lvl.collides(231, 303) and not lvl.collides(231, 302)
+
+
+def test_readme_overview_is_current():
+    if not os.path.exists(mapgen.OVERVIEW_PNG):
+        pytest.skip("not a source checkout")
+    stored = np.asarray(Image.open(mapgen.OVERVIEW_PNG).convert("RGB"))
+    assert np.array_equal(stored, mapgen.render_overview(Level.builtin())), \
+        "docs/images/map.png is stale: run scripts/build_map.py"
 
 
 def test_stored_route_reaches_the_babe():
