@@ -22,6 +22,7 @@ from .. import physics as P
 from ..batch import KIND_JUMP, KIND_WALK, BatchSim
 from ..game import Game
 from ..level import Level
+from ..routes import START_POSITIONS, RouteProgress, ending_id, route_for
 from .jump_king_env import VECTOR_FEATURES, vector_features
 
 
@@ -31,7 +32,8 @@ class JumpKingVectorEnv(VectorEnv):
     def __init__(self, num_envs=64, level="auto", reward="height", goal_bonus=10.0,
                  step_penalty=0.0, max_episode_steps=2000, charges=tuple(range(2, 37)),
                  walk_ticks=(4, 8, 16, 32), start="start", max_start_screen=None,
-                 wind_phase="random", splat_time=C.SPLAT_TIME, macro_timeout=60 * 20, seed=None):
+                 wind_phase="random", splat_time=C.SPLAT_TIME, macro_timeout=60 * 20, seed=None,
+                 ending="normal", giant_boots=False, snake_ring=False):
         if isinstance(level, str):
             level = Level.load(level)
         self.level = level
@@ -56,6 +58,10 @@ class JumpKingVectorEnv(VectorEnv):
         self.observation_space = batch_space(self.single_observation_space, self.num_envs)
         self._rng = np.random.default_rng(seed)
         self._game = Game(level, splat_time=splat_time)
+        self._game.wear(giant_boots=giant_boots, snake_ring=snake_ring)
+        self.ending = ending
+        self.ending_id = ending_id(ending)
+        self._route = RouteProgress(route_for(ending), self.num_envs)
         self._steps = np.zeros(self.num_envs, np.int64)
         self._best_screen = np.zeros(self.num_envs, np.int64)
 
@@ -73,6 +79,8 @@ class JumpKingVectorEnv(VectorEnv):
             start = options.get("screen", self.start_mode)
             if start == "start" or start is None:
                 g.reset()
+            elif start in START_POSITIONS:
+                g.reset(*START_POSITIONS[start])
             elif start == "random_screen":
                 g.reset_to_screen(int(self._rng.integers(0, self.max_start_screen + 1)), rng=self._rng)
             elif isinstance(start, (list, tuple)):
@@ -83,6 +91,7 @@ class JumpKingVectorEnv(VectorEnv):
             self.sim.states[i] = g.state
             self._steps[i] = 0
             self._best_screen[i] = g.screen
+            self._route.reset([g.screen], [i])
 
     def _infos(self):
         s = self.sim.states
@@ -91,7 +100,14 @@ class JumpKingVectorEnv(VectorEnv):
             "screen": self.sim.screens, "goal": self.sim.done.copy(),
             "ticks": s[:, P.S_TICK].astype(np.int64), "jumps": s[:, P.S_JUMPS].astype(np.int64),
             "falls": s[:, P.S_FALLS].astype(np.int64),
+            "ending": s[:, P.S_ENDING].astype(np.int64), "success": self._success(),
+            "route_progress": self._route.index.copy(),
         }
+
+    def _success(self):
+        e = self.sim.states[:, P.S_ENDING].astype(np.int64)
+        done = self.sim.done
+        return done & ((e == self.ending_id) | (self.ending_id == 0))
 
     # ---------------------------------------------------------------- api
     def reset(self, *, seed=None, options=None):
@@ -109,6 +125,8 @@ class JumpKingVectorEnv(VectorEnv):
         events, ticks = self.sim.macro(acts[:, 0], acts[:, 1], acts[:, 2], max_ticks=self.macro_timeout)
         h1 = self.sim.heights
         goal = self.sim.done
+        route_steps = self._route.update(self.sim.screens)
+        success = self._success()
         if self.reward_mode == "height":
             rew = (h1 - h0) / C.SCREEN_H
         elif self.reward_mode == "max_height":
@@ -118,11 +136,13 @@ class JumpKingVectorEnv(VectorEnv):
             rew = np.maximum(sc - self._best_screen, 0).astype(np.float64)
             rew -= np.maximum(s0 - sc, 0)
             self._best_screen = np.maximum(self._best_screen, sc)
+        elif self.reward_mode == "route":
+            rew = route_steps.astype(np.float64)
         elif self.reward_mode == "sparse":
             rew = np.zeros(self.num_envs)
         else:
             raise ValueError(self.reward_mode)
-        rew = rew + self.goal_bonus * goal - self.step_penalty
+        rew = rew + self.goal_bonus * success - self.step_penalty
         self._steps += 1
         terminated = goal.copy()
         truncated = (~terminated) & (self._steps >= self.max_episode_steps)
@@ -186,7 +206,8 @@ if _SB3VecEnv is not None:
             infos = []
             for i in range(self.num_envs):
                 d = {"height": int(info["height"][i]), "max_height": int(info["max_height"][i]),
-                     "screen": int(info["screen"][i]), "goal": bool(info["goal"][i])}
+                     "screen": int(info["screen"][i]), "goal": bool(info["goal"][i]),
+                     "ending": int(info["ending"][i]), "success": bool(info["success"][i])}
                 if dones[i]:
                     d["terminal_observation"] = info["final_obs"][i]
                     d["TimeLimit.truncated"] = bool(trunc[i] and not term[i])

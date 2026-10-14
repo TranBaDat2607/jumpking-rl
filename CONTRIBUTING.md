@@ -24,15 +24,18 @@ the clone against the real game. Without the game, those tests are skipped.
 
 - **Fidelity first.** Any change to `jumpking/physics.py` or
   `jumpking/constants.py` must keep the full test suite passing. If you own the
-  game, run `python scripts/validate_original.py --download` too; it must
-  still report `42 / 42 sections reproduced; goal reached: True`.
+  game, run `python scripts/validate_original.py --download` too; all three
+  routes (base game, New Babe+, Ghost of the Babe) must still report `EXACT`.
 - **Cite sources.** When you change a mechanic, add or update the source in
   `docs/RESEARCH.md`.
 - **No game assets.** Never commit files from the game, or images, maps or
-  data derived from it. The original map and executable are only ever read at
-  runtime from the user's own install.
-- **Determinism.** All simulation state lives in the state vector.
-  `get_state()` / `set_state()` must restore a run bit-exactly.
+  data derived from it. The original map, the content files (NPCs, items,
+  dialogue) and the executable are only ever read at runtime from the user's
+  own install.
+- **Determinism.** All physics state lives in the state vector.
+  `get_state()` / `set_state()` must restore a run bit-exactly. Campaign
+  state lives in `Campaign` objects and must survive `snapshot()` /
+  `restore()` (use bound methods, not lambdas, in behaviour trees).
 - **Style.** Match the surrounding code. Keep the kernel numba-compatible:
   plain floats, ints and NumPy arrays only.
 

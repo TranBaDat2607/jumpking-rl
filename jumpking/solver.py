@@ -35,42 +35,66 @@ def default_actions(wind=False, charges=JUMP_CHARGES, walks=WALK_TICKS):
     return acts
 
 
-def apply_action(game, action):
-    kind, d, v = action
+def apply_action(game, action, landed=False):
+    kind, d, v = action[:3]
+    if len(action) > 3:
+        landed = bool(action[3])
     if kind == "jump":
-        return game.jump(d, v)
+        return game.jump(d, v, landed=landed)
     if kind == "walk":
-        return game.walk(d, v)
+        return game.walk(d, v, landed=landed)
     # wait: idle for v ticks then settle
-    ev = game.run([(0, 0)] * v)
-    e2, n = game.settle()
+    ev = game.run([(0, 0)] * v) if v else 0
+    e2, n = game.settle(landed=landed)
     return ev | e2, v + n
 
 
-def state_key(s, wind_screen, wind_bucket=96):
-    key = (int(round(s[P.S_X] * 4)), int(s[P.S_Y]), int(s[P.S_SCREEN]),
-           int(s[P.S_ON_ICE]), int(round(s[P.S_VX] * 20)))
+def state_key(s, wind_screen, wind_bucket=96, cell=None):
+    """Deduplication key. ``cell = (px, v)`` merges states within ``px``
+    pixels and ``v`` px/tick of horizontal speed: much coarser than the
+    default, which lets landed-mode searches (where every slide speed is a
+    new state) reach deep momentum routes such as Blue Ruin's."""
+    if cell is None:
+        key = (int(round(s[P.S_X] * 4)), int(s[P.S_Y]), int(s[P.S_SCREEN]),
+               int(s[P.S_ON_ICE]), int(round(s[P.S_VX] * 20)))
+    else:
+        px, pv = cell
+        key = (int(s[P.S_X] // px), int(s[P.S_Y] // px), int(s[P.S_SCREEN]),
+               int(round(s[P.S_VX] / pv)))
     if wind_screen:
         key += (int(s[P.S_TICK]) // wind_bucket,)
     return key
 
 
 def bfs(game, start_state, success, keep=None, actions=None, max_nodes=20000,
-        max_depth=60, return_path=True):
+        max_depth=60, return_path=True, landed=False, reject_events=0, cell=None,
+        touch=None):
     """Generic BFS.
 
     success(state) -> bool : goal test on settled states
     keep(state) -> bool    : prune states that leave the region of interest
+    landed                 : nodes are landings (possibly still sliding on ice)
+                             instead of standstills, so momentum can be kept;
+                             actions then carry a 4th element ``True``
+    reject_events          : event bits (e.g. ``physics.EV_SPLAT``) that disqualify
+                             an action
+    cell                   : coarse deduplication ``(px, v)``, see ``state_key``
+    touch                  : a rectangle (x, y, w, h); an action whose jump or
+                             walk overlaps it at any tick also succeeds
+                             (items are picked up in mid-air)
     Returns (path, goal_state, n_expanded) where path is a list of actions or
     None when no route was found within the budget.
     """
     lvl = game.level
     saved = game.snapshot()
+    saved_touch = game.params[P.P_TOUCH:P.P_TOUCH + 4].copy()
+    if touch is not None:
+        game.params[P.P_TOUCH:P.P_TOUCH + 4] = touch
     start = np.array(start_state, dtype=np.float64)
     wind_any = bool(lvl.wind.any())
     if actions is None:
         actions = default_actions(wind=wind_any)
-    key0 = state_key(start, wind_any and lvl.wind[int(start[P.S_SCREEN])])
+    key0 = state_key(start, wind_any and lvl.wind[int(start[P.S_SCREEN])], cell=cell)
     parents = {key0: (None, None)}
     states = {key0: start}
     frontier = deque([(key0, 0)])
@@ -86,20 +110,25 @@ def bfs(game, start_state, success, keep=None, actions=None, max_nodes=20000,
             base = states[key]
             for a in actions:
                 game.restore(base)
-                apply_action(game, a)
+                if landed:
+                    a = tuple(a[:3]) + (True,)
+                ev, _ = apply_action(game, a)
+                if ev & reject_events:
+                    continue
                 s = game.state
-                if not P.is_settled(s):
+                touched = touch is not None and (ev & P.EV_TOUCH)
+                if not touched and not (P.is_landed(s) if landed else P.is_settled(s)):
                     continue  # timed out mid-air (stuck sliding etc.)
                 if s[P.S_SPLAT] > 0 and s[P.S_SPLAT_DONE] == 0:
                     continue
                 if keep is not None and not keep(s):
                     continue
-                k = state_key(s, wind_any and lvl.wind[int(s[P.S_SCREEN])])
-                if k in parents:
+                k = state_key(s, wind_any and lvl.wind[int(s[P.S_SCREEN])], cell=cell)
+                if k in parents and not touched:
                     continue
                 parents[k] = (key, a)
                 states[k] = s.copy()
-                if success(s):
+                if touched or success(s):
                     path = []
                     if return_path:
                         cur = k
@@ -113,6 +142,7 @@ def bfs(game, start_state, success, keep=None, actions=None, max_nodes=20000,
         return None, None, expanded
     finally:
         game.restore(saved)
+        game.params[P.P_TOUCH:P.P_TOUCH + 4] = saved_touch
 
 
 def screen_exit_route(game, screen, start_state=None, max_nodes=20000):

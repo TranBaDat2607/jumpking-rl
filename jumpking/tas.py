@@ -132,9 +132,11 @@ def save(path, inputs, start=None, header=None, state=None):
         fh.write(dumps(compress(inputs), start, header, state))
 
 
-def macro_to_inputs(game, actions):
+def macro_to_inputs(game, actions, landed=False):
     """Expand macro actions into the exact per-tick inputs they produce
-    (recorded by stepping a copy of ``game``)."""
+    (recorded by stepping a copy of ``game``). With ``landed`` (or a 4th
+    element ``True`` on an action) a macro ends on landing, as
+    ``Game.jump(..., landed=True)`` does."""
     from .game import Game
 
     g = Game(game.level)
@@ -146,13 +148,15 @@ def macro_to_inputs(game, actions):
         g.step(d, j)
         inputs.append((d, j))
 
-    def settle():
+    def settle(done):
         for _ in range(60 * 30):
-            if P.is_settled(g.state):
+            if done(g.state):
                 break
             press(0, 0)
 
-    for kind, d, v in actions:
+    for a in actions:
+        kind, d, v = a[:3]
+        done = P.is_landed if (a[3] if len(a) > 3 else landed) else P.is_settled
         if kind == "walk":
             n = 0
             if g.state[P.S_SPLAT] > 0 and g.state[P.S_SPLAT_DONE] > 0:
@@ -162,13 +166,15 @@ def macro_to_inputs(game, actions):
                 press(d, 0)
                 n += 1
             press(0, 0)
-            settle()
+            settle(done)
         else:
             if g.state[P.S_JUMP_HELD] > 0:
                 press(d, 0)
             if g.state[P.S_SPLAT] > 0 and g.state[P.S_SPLAT_DONE] > 0:
                 press(d, 0)
             target = (max(2, min(36, v)) - 1) * P.DT - 1e-6
+            if g.state[P.S_IN_WATER] > 0:
+                target = (max(2, min(36, v)) - P.WATER_MULTIPLIER) * P.DT - 1e-6
             jumped = False
             started = False
             waited = 0
@@ -189,5 +195,5 @@ def macro_to_inputs(game, actions):
             if not jumped and g.state[P.S_CHARGING] > 0:
                 press(d, 0)
             press(0, 0)
-            settle()
+            settle(done)
     return inputs

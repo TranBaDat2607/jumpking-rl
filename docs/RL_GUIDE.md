@@ -4,22 +4,25 @@
 
 | argument | default | meaning |
 | --- | --- | --- |
-| `level` | `"auto"` | `"auto"` (original if installed, else built-in), `"original"`, `"builtin"`, a `.png`/`.xnb` path, or a `Level` |
+| `level` | `"auto"` | `"auto"` (original if installed, else built-in), `"original"` (the whole 169-screen world), `"original-base"` (screens 1–43 + the Imp Room), `"builtin"`, a `.png`/`.xnb` path, or a `Level` |
+| `ending` | `"normal"` | which babe counts as success: `"normal"` (screen 43), `"new_babe_plus"` (100), `"ghost_of_the_babe"` (154) or `"any"`. Reaching any babe ends the episode. |
 | `action_mode` | `"macro"` | `"macro"` or `"frame"` |
 | `obs_mode` | `"vector"` | `"vector"`, `"grid"`, `"rgb"` or `"dict"` |
-| `reward` | `"height"` | `"height"`, `"max_height"`, `"screen"`, `"sparse"`, or `f(prev_info, info, events) -> float` |
-| `goal_bonus` | `10.0` | added once when the babe is reached |
+| `reward` | `"height"` | `"height"`, `"max_height"`, `"screen"`, `"route"`, `"sparse"`, or `f(prev_info, info, events) -> float` |
+| `goal_bonus` | `10.0` | added once when the babe of `ending` is reached |
 | `step_penalty` | `0.0` | subtracted every step |
 | `max_episode_steps` | 2000 (macro) or 20 min of ticks (frame) | truncation limit |
 | `frame_skip` | `4` | ticks per frame-mode action |
-| `charges` | `2..36` | jump charge ticks offered in macro mode (power = charge / 36) |
+| `charges` | `2..36` | jump charges offered in macro mode (power = charge / 36; in water the same power takes twice as many ticks) |
 | `walk_ticks` | `(4, 8, 16, 32)` | walk durations offered in macro mode |
-| `start` | `"start"` | `"start"`, `"random_screen"`, a screen index, or a list of indices |
+| `start` | `"start"` | `"start"`, `"imp_room"` (New Babe+'s crown-sacrifice start), `"random_screen"`, a screen index, or a list of indices |
 | `max_start_screen` | last screen | upper bound for `"random_screen"` |
 | `wind_phase` | `"random"` | `"random"`, `"zero"`, or a number of seconds added to the wind clock |
 | `splat_time` | `0.5` | splat recovery time in grounded seconds (the game's value) |
 | `image_size` | `(90, 120)` | `rgb` observation size |
 | `macro_timeout` | `1200` | maximum ticks per macro action |
+| `landed_macros` | `False` | a macro ends when the king lands, even while he still slides on ice, instead of when he stands still; the next jump then keeps the slide's momentum (Blue Ruin needs this) |
+| `giant_boots`, `snake_ring` | `False` | wear the items (their physics: no walking and a landing freeze; icy floors and no snow) |
 | `render_mode` | `None` | `"rgb_array"` or `"human"` |
 
 ## Actions
@@ -54,7 +57,7 @@ jump), so policies trained here use the same control interface as the game.
 
 ### `vector`
 
-22 float32 values, in this order (`jumpking.envs.VECTOR_FEATURES`):
+26 float32 values, in this order (`jumpking.envs.VECTOR_FEATURES`):
 
 | # | feature | scale |
 | --- | --- | --- |
@@ -72,6 +75,8 @@ jump), so policies trained here use the same control interface as the game.
 | 18 | `x_tile_frac` | x mod 8 / 8 |
 | 19 | `screen_has_wind` | 0 / 1 |
 | 20, 21 | `wind_phase_sin`, `wind_phase_cos` | 0 on windless screens |
+| 22, 23 | `in_water`, `in_sand` | 0 / 1 |
+| 24, 25 | `giant_boots`, `snake_ring` | 0 / 1 |
 
 ### `grid`
 
@@ -81,7 +86,7 @@ above it (top half), one cell per 8 px tile.
 | channel | contents |
 | --- | --- |
 | 0 | blocking terrain (255) |
-| 1 | ice 255, snow 160, slope 96, no-wind 48 |
+| 1 | ice 255, water 208, snow 160, sand 128, slope 96, quark 64, no-wind 48 |
 | 2 | the player's hitbox (255) |
 
 SB3's `CnnPolicy` accepts it directly.
@@ -98,11 +103,14 @@ Every step's info dict holds:
 - position and velocity: `x`, `y`, `vx`, `vy`;
 - location: `screen` (0-based), `area`;
 - progress: `height` (px above the bottom of screen 1), `max_height`;
-- state flags: `on_ground`, `knocked`, `on_ice`, `on_snow`, `charging`,
-  `charge`, `splat`;
+- state flags: `on_ground`, `knocked`, `on_ice`, `on_snow`, `in_water`,
+  `in_sand`, `charging`, `charge`, `splat`, `giant_boots`, `snake_ring`;
 - `wind`;
 - counters: `ticks`, `jumps`, `falls`, `splats`;
-- `goal`;
+- `goal` (any babe reached), `ending` (1 normal, 2 New Babe+, 3 Ghost of the
+  Babe), `success` (the babe of `ending`);
+- `route_progress` (screens of the ending's route reached in order) and
+  `route_steps` (new ones this step);
 - `events` (bit flags from `jumpking.physics`):
 
   | flag | meaning |
@@ -118,6 +126,8 @@ Every step's info dict holds:
   | `EV_TELEPORT` | went through a side teleport |
   | `EV_SLOPE` | touched a slope |
   | `EV_GETUP` | stood up after a splat |
+  | `EV_WATER` | entered or left water |
+  | `EV_SAND` | inside sand |
 
 - `ticks_used`.
 
@@ -127,9 +137,16 @@ Every step's info dict holds:
 whose layout is given by the `S_*` indices in `jumpking/physics.py`.
 `env.set_state(s)` restores it exactly. Uses:
 
-- **Go-Explore and archive methods.** `examples/go_explore.py` solves the
-  built-in map in about a minute.
-- **MCTS and other planners.**
+- **Go-Explore and archive methods.** `examples/go_explore.py` (cells scored
+  by route progress, `--ending` picks the babe) solves the built-in map in
+  about a minute, and with `--landed` (landed macros, cells keyed by speed)
+  the original game's normal ending in about 18 minutes.
+- **MCTS and other planners.** `jumpking.planner.Planner` runs `solver.bfs`
+  from the campaign's state to goals such as "stand on screen k", "touch this
+  box" or "come near this bird", then plays the route frame by frame.
+  `solver.bfs(..., landed=True, cell=(8, 1.0))` searches landed states with
+  coarse deduplication, which finds momentum routes on ice that the default
+  fine key runs out of nodes before reaching.
 - **Resets in the middle of a level.**
 - **Collecting demonstrations.** `jumpking.solver.bfs` finds exact action
   sequences between states.
@@ -147,6 +164,11 @@ timing.
 - **`max_height`** rewards only new records. It pairs well with exploration
   bonuses because it never punishes failed attempts.
 - **`screen`** is coarse and close to how humans measure progress.
+- **`route`** pays +1 for each new screen along the route of `ending`
+  (`jumpking.routes`). The New Babe+ and Ghost of the Babe routes go
+  sideways through teleports and down the Hole and the Bog, so height alone
+  is a misleading signal there: Redcrown Woods' side passage leads straight
+  into Philosopher's Forest, the highest screens of the atlas.
 - **Custom rewards** can use `prev_info`, `info` and `events`, for example
   `-0.01 if events & EV_SPLAT else 0`.
 
@@ -157,7 +179,9 @@ timing.
 
 - It takes the same reward, curriculum and wind options as `JumpKingEnv`.
 - One step advances all N kings in a single multi-threaded numba call:
-  about 640k steps/s with N = 512.
+  about 440k steps/s with N = 512.
+- It also takes `ending`, `giant_boots` and `snake_ring`, and the `route`
+  reward.
 - Finished sub-envs are reset in the same step. Their last observation is in
   `infos["final_obs"]`.
 - `get_states()` / `set_states()` expose the `(N, STATE_SIZE)` state array.
@@ -196,3 +220,81 @@ It suits population methods.
 - `tas.macro_to_inputs` expands macro actions into exact per-tick inputs.
 - `scripts/evaluate.py --save-tas` exports the best episode.
 - `jumpking replay file.tas` shows a recording in the viewer.
+
+## The whole game: `JumpKingCampaignEnv`
+
+`JumpKingCampaign-v0` (frame actions) and `JumpKingCampaignMacro-v0` (macro
+actions) play the complete game with `jumpking.campaign.Campaign`: three
+stories in one world, NPCs and their dialogue, merchants, the four birds,
+world items, wearable items, endings, statistics and all 48 Steam
+achievements. They need a local Jump King install; the game's content files
+are read from it at runtime.
+
+| argument | default | meaning |
+| --- | --- | --- |
+| `mode` | `"normal"` | the story of a new game: `"normal"`, `"new_babe_plus"`, `"ghost_of_the_babe"` |
+| `action_mode` | `"frame"` | `"frame"` (`Discrete(6)` × `frame_skip`) or `"macro"` |
+| `achievement_bonus` | `1.0` | per newly unlocked achievement |
+| `ending_bonus` | `10.0` | for reaching the babe of `ending` (default: the mode's) |
+| `route_reward` | `0.0` | per new screen along the route (shaping) |
+| `keep_profile` | `True` | keep inventory, items and achievements between episodes, like the game's permanent save |
+| `sacrifice_crown` | `True` | New Babe+ with the crown: start in the Imp Room |
+
+- **Episodes** are runs: `reset()` starts a new game, `reset(options=...)`
+  takes `mode`, `profile` (a `Profile` or `"new"`), `equip` (items to put on),
+  `sacrifice_crown` and `state` (a `Campaign.snapshot()`).
+- **Observations**: the 26 vector features, run statistics, the worn items and
+  the 48-bit achievement mask (`jumpking.envs.campaign_env.CAMPAIGN_FEATURES`).
+- **info**: the physics info plus `ended`, `ending`, `success`,
+  `new_achievements`, `achievements` (count), `run` statistics and route
+  progress.
+- **Speed**: about 15k frames/s; NPCs, merchants and birds update every frame,
+  as in the game.
+
+Several achievements need more than one run (the crown for Double King, ten
+gold rings for Big Spender, the Giant Boots for the Giant Leaps runs), so keep
+the profile between episodes. `Campaign` can also be used directly:
+
+```python
+from jumpking.campaign import Campaign, Profile
+
+c = Campaign(profile=Profile.load("save.json"))   # or Campaign() for a new profile
+c.new_game("ghost_of_the_babe")
+c.step(direction=1, jump=False)                     # one frame
+c.jump(direction=-1, charge=36)                     # a macro, frame by frame
+c.equip("GiantBoots")                               # put on an owned item
+print(c.unlocked, c.run_stats(), c.profile.inventory)
+snap = c.snapshot(); c.restore(snap)                # the whole game state
+c.profile.save("save.json")
+```
+
+`jumpking achievements [--profile save.json]` lists the 48 achievements with
+their exact unlock rules, and `jumpking play --campaign MODE --profile
+save.json` plays the campaign with the keyboard.
+
+### A playthrough to all 48
+
+`scripts/achievement_run.py` plays the game from a new profile to all 48
+achievements with button inputs only, run after run from the title menu's
+New Game / New Babe+ / Ghost of the Babe: the community speed-runs where they
+fit, and `Planner` routes for everything else (talking to NPCs, chasing the
+birds, collecting and buying items, the Giant Boots and Snake Ring runs, the
+20,000 jumps and 1,000 falls). The result is saved as a list of runs, each a
+mode, the pause-menu equipment changes before it and the logged actions
+(`jump`, `walk`, `wait`, `frames`, `tas`, `equip`, `repeat`), and
+`jumpking.planner.replay` plays it back on any `Campaign`:
+
+```python
+import json
+from jumpking.campaign import Campaign
+from jumpking.planner import replay
+
+runs = json.load(open("jumpking/data/playthrough_all48.json"))["runs"]
+c = replay(Campaign(), runs)
+assert len(c.unlocked) == 48
+```
+
+Speed-run inputs are not copied into the file: a `["tas", key, first, last]`
+action refers to frames of a route in `jumpking.verify.ROUTES`, read from
+`$JUMPKING_TAS_DIR` or downloaded from ShootMe/JumpKingTAS.
+`tests/test_playthrough.py` replays the saved playthrough.

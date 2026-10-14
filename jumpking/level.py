@@ -17,7 +17,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 BUILTIN_PNG = os.path.join(DATA_DIR, "level.png")
 BUILTIN_META = os.path.join(DATA_DIR, "level_meta.json")
 
-# --- native block colours (base game subset) ---------------------------------
+# --- native block colours (BaseBlockFactory / LevelManager) ------------------
 RGB_SOLID = (0, 0, 0)
 RGB_SLOPE = (255, 0, 0)
 RGB_FAKE = (128, 128, 128)
@@ -25,20 +25,27 @@ RGB_ICE = (0, 255, 255)
 RGB_SNOW = (255, 255, 0)
 RGB_WIND = (0, 255, 0)
 RGB_NOWIND = (255, 255, 255)
+RGB_WATER = (0, 170, 170)
+RGB_SAND = (255, 106, 0)
+RGB_QUARK = (182, 255, 0)
 # teleport: (R, 0, 255) with R = 1-based destination screen
+# wind variants: (R, 255, 0) with R in 192..207 (oscillating), 208..223
+# (constant, leftwards) or 224..239 (constant, rightwards); see wind_code()
 
-# DLC / mod colours the clone deliberately ignores (reported once)
-_IGNORED = {
-    (0, 170, 170): "water",
-    (255, 106, 0): "sand",
-    (182, 255, 0): "quark",
-    (128, 255, 255): "low gravity",
-    (255, 255, 128): "thin snow",
+BLOCK_COLOURS = {
+    RGB_SOLID: P.T_SOLID, RGB_FAKE: P.T_FAKE, RGB_ICE: P.T_ICE, RGB_SNOW: P.T_SNOW,
+    RGB_NOWIND: P.T_NOWIND, RGB_WATER: P.T_WATER, RGB_SAND: P.T_SAND, RGB_QUARK: P.T_QUARK,
 }
+# blocks that orient a neighbouring slope (BaseBlockFactory.IsSolidBlock + fake)
+_EDGE_CODES = (P.T_SOLID, P.T_ICE, P.T_SNOW, P.T_SAND, P.T_FAKE, -1)
 
-# 0-based screens of the base game inside the original atlas
+# 0-based screens inside the original atlas (Content/gui/location_settings.xml)
 IMP_ROOM = 44
 BASE_GAME_SCREENS = tuple(range(C.BASE_SCREENS)) + (IMP_ROOM,)
+NBP_SCREENS = tuple(range(45, 100))            # 46-100: entrance + New Babe+
+GHOST_SCREENS = tuple(range(101, 154))         # 102-154: Ghost of the Babe
+FOREST_SCREENS = tuple(range(155, 164))        # 156-164: Philosopher's Forest + Hole
+FULL_SCREENS = BASE_GAME_SCREENS + NBP_SCREENS + GHOST_SCREENS + FOREST_SCREENS
 
 # babe position on the last base-game screen (screen-local, see RESEARCH.md)
 # calibrated so the base-game TAS ending triggers on its last input frame
@@ -55,13 +62,29 @@ def world_y_of_screen(index):
     return -C.SCREEN_H * index
 
 
+def wind_code(intensity=0, direction=None):
+    """Per-screen wind code used by ``Level.wind`` and the kernel.
+
+    0: no wind, 1: the default oscillating wind; otherwise the coloured
+    variant with ``intensity`` 1..16 and ``direction`` None (oscillating),
+    True (constant, leftwards) or False (constant, rightwards)."""
+    if intensity <= 0:
+        return 1
+    kind = 0 if direction is None else (1 if direction else 2)
+    return 2 + (int(intensity) - 1) + 16 * kind
+
+
 def _classify(rgba):
     """Map an (H, W, 4) RGBA screen image to raw block codes (slopes unresolved).
 
-    Returns (codes, wind, teleports) where slopes are marked with -1."""
+    Returns (codes, wind, teleports, unknown) where slopes are marked with -1,
+    ``wind`` is the screen's wind code and ``teleports`` is the (left, right)
+    pair of 1-based targets (0 = none) as LevelManager.LoadBlocksInterval reads
+    them: a pixel in columns 0-29 sets the left link, 30-59 the right one, and
+    later pixels (row-major) overwrite earlier ones."""
     h, w = rgba.shape[:2]
     codes = np.zeros((h, w), dtype=np.int8)
-    a = rgba[..., 3] > 0
+    a = rgba[..., 3] == 255
     r = rgba[..., 0].astype(np.int32)
     g = rgba[..., 1].astype(np.int32)
     b = rgba[..., 2].astype(np.int32)
@@ -70,39 +93,67 @@ def _classify(rgba):
     def k(rgb):
         return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2]
 
-    codes[a & (key == k(RGB_SOLID))] = P.T_SOLID
-    codes[a & (key == k(RGB_SLOPE))] = -1
-    codes[a & (key == k(RGB_FAKE))] = P.T_FAKE
-    codes[a & (key == k(RGB_ICE))] = P.T_ICE
-    codes[a & (key == k(RGB_SNOW))] = P.T_SNOW
-    codes[a & (key == k(RGB_NOWIND))] = P.T_NOWIND
-    wind = bool(np.any(a & (key == k(RGB_WIND))))
-    tele = a & (g == 0) & (b == 255) & (r >= 1)
-    teleports = []
-    for yy, xx in zip(*np.nonzero(tele)):
-        teleports.append((int(xx), int(r[yy, xx])))
-    ignored = set()
-    for rgb, name in _IGNORED.items():
-        if np.any(a & (key == k(rgb))):
-            ignored.add(name)
-    return codes, wind, teleports, ignored
+    known = np.zeros((h, w), bool)
+    for rgb, code in BLOCK_COLOURS.items():
+        m = a & (key == k(rgb))
+        codes[m] = code
+        known |= m
+    m = a & (key == k(RGB_SLOPE))
+    codes[m] = -1
+    known |= m
+    wind = 0
+    intensity = 0
+    direction = None
+    left = right = 0
+    for yy, xx in zip(*np.nonzero(a & ~known)):
+        rr, gg, bb = int(r[yy, xx]), int(g[yy, xx]), int(b[yy, xx])
+        if gg == 0 and bb == 255:
+            if xx >= 30:
+                right = rr
+            else:
+                left = rr
+        if gg == 255 and bb == 0:
+            if 191 < rr < 208:
+                intensity, direction = rr - 191, None
+            elif 207 < rr < 224:
+                intensity, direction = rr - 207, True
+            elif 223 < rr < 240:
+                intensity, direction = rr - 223, False
+            wind = 1
+    if wind:
+        wind = wind_code(intensity, direction)
+    unknown = set()
+    for yy, xx in zip(*np.nonzero(a & ~known)):
+        rgb = (int(r[yy, xx]), int(g[yy, xx]), int(b[yy, xx]))
+        if not ((rgb[1] == 0 and rgb[2] == 255) or (rgb[1] == 255 and rgb[2] == 0)):
+            unknown.add(rgb)
+    return codes, wind, (left, right), unknown
 
 
 def resolve_slopes(codes):
-    """Turn slope markers (-1) into oriented slope tiles from their neighbours.
+    """Turn slope markers (-1) into oriented slope tiles from their neighbours
+    (BaseBlockFactory.GetSlopeType).
 
-    A slope needs one solid/fake neighbour left or right and one above or
-    below; otherwise it degrades to a solid block."""
+    ``codes`` is a grid of rows (top first); for a whole map pass the stacked
+    global grid so that neighbours on adjacent screens count, as in the game.
+    Columns outside the grid count as solid (LevelManager.IsBlockEdge). A slope
+    without a valid pair of neighbours becomes ``T_SLOPE_NONE``, which the
+    game creates but never collides with."""
+    codes = np.asarray(codes)
     h, w = codes.shape
-    solidish = (codes == P.T_SOLID) | (codes == -1) | (codes == P.T_FAKE) | \
-               (codes == P.T_ICE) | (codes == P.T_SNOW)
+    solidish = np.isin(codes, _EDGE_CODES)
+    pad = np.zeros((h + 2, w + 2), bool)
+    pad[1:-1, 1:-1] = solidish
+    pad[:, 0] = True
+    pad[:, -1] = True
     out = codes.copy()
     ys, xs = np.nonzero(codes == -1)
     for y, x in zip(ys, xs):
-        right = x + 1 < w and solidish[y, x + 1]
-        left = x > 0 and solidish[y, x - 1]
-        below = y + 1 < h and solidish[y + 1, x]
-        above = y > 0 and solidish[y - 1, x]
+        py, px = y + 1, x + 1
+        right = pad[py, px + 1]
+        left = pad[py, px - 1]
+        below = pad[py + 1, px]
+        above = pad[py - 1, px]
         if right and below:
             t = P.T_SLOPE_TL
         elif left and below:
@@ -112,19 +163,57 @@ def resolve_slopes(codes):
         elif left and above:
             t = P.T_SLOPE_BR
         else:
-            t = P.T_SOLID
+            t = P.T_SLOPE_NONE
         out[y, x] = t
     return out
+
+
+class Ending:
+    """A babe the king can reach (EndingManager): standing on the ground on the
+    camera screen ``screen`` (0-based) with the hitbox centre beyond ``x``
+    (``side`` +1: centre.x >= x, -1: centre.x <= x) and centre.y <= ``max_y``."""
+
+    __slots__ = ("name", "screen", "side", "x", "max_y")
+
+    def __init__(self, name, screen, side, x, max_y=1e18):
+        self.name = name
+        self.screen = int(screen)
+        self.side = int(side)
+        self.x = float(x)
+        self.max_y = float(max_y)
+
+    def as_tuple(self):
+        return (self.screen, self.side, self.x, self.max_y)
+
+    def __repr__(self):
+        return "Ending(%r, screen=%d)" % (self.name, self.screen + 1)
+
+
+def _ending_pos(screen, inside_x, inside_y=-36):
+    """endingKingStartPosition = GAME_RECT.Center + INSIDE_SCREEN_POSITION
+    + (0, -screen * 360)."""
+    return 240 + inside_x, 180 + inside_y - screen * C.SCREEN_H
+
+
+# NormalEnding (screen 43), NewBabePlusEnding (100), OwlEnding (154)
+_NX, _ = _ending_pos(42, 96)
+_BX, _BY = _ending_pos(99, -96)
+_OX, _OY = _ending_pos(153, 0)
+ENDING_NORMAL = Ending("normal", 42, +1, _NX)
+ENDING_NBP = Ending("new_babe_plus", 99, -1, _BX, _BY + 1)
+ENDING_GHOST = Ending("ghost_of_the_babe", 153, +1, _OX, _OY + 1)
+ENDINGS = (ENDING_NORMAL, ENDING_NBP, ENDING_GHOST)
 
 
 class Level:
     """Immutable level description consumed by the physics kernel."""
 
     def __init__(self, screens, wind, tp_left, tp_right, goal=None, start=None,
-                 name="level", area_names=None):
+                 name="level", area_names=None, endings=(), content="custom"):
         n = len(screens)
         self.n_screens = n
         self.name = name
+        self.content = content
         self.screen_tiles = [np.asarray(sc, dtype=np.int8) for sc in screens]
         # global grid: row 0 is the top row of the highest screen
         self.tiles = np.zeros((n * C.SCREEN_TILES_H, C.SCREEN_TILES_W), dtype=np.int8)
@@ -136,9 +225,10 @@ class Level:
         self.tp_right = np.asarray(tp_right, dtype=np.int32)
         if goal is None:
             gx0, gy0, gx1, gy1 = BASE_GOAL_LOCAL
-            top = world_y_of_screen(n - 1)
+            top = world_y_of_screen(min(n, C.BASE_SCREENS) - 1)
             goal = (gx0, top + gy0, gx1, top + gy1)
         self.goal = tuple(float(v) for v in goal)
+        self.endings = tuple(e for e in endings if e.screen < n)
         self.start = start if start is not None else (C.START_X, C.START_Y)
         self.area_names = area_names or [C.area_of_screen(i) for i in range(n)]
         self.offset_y = C.SCREEN_H * (n - 1)
@@ -146,13 +236,14 @@ class Level:
     # ------------------------------------------------------------------ io
     @classmethod
     def from_atlas(cls, rgba, n_screens=C.BASE_SCREENS, name="atlas", goal=None,
-                   start=None, include=None):
+                   start=None, include=None, endings=(), content="custom"):
         """Build from an atlas image array (H, W, 4) in the native layout.
 
-        ``n_screens`` screens (0-based 0..n-1) are loaded and the babe is put on
-        the last of them. ``include`` optionally lists extra / restricted
-        0-based screen indices: screens outside it are loaded empty and side
-        teleports into them are dropped (used to exclude DLC content)."""
+        ``n_screens`` screens (0-based 0..n-1) are loaded. ``include``
+        optionally lists the 0-based screen indices to keep: screens outside it
+        are loaded empty and side teleports into them are dropped. Slopes are
+        oriented on the stacked map, so neighbours on adjacent screens count
+        as in the game."""
         rgba = np.asarray(rgba)
         if rgba.shape[2] == 3:
             alpha = np.full(rgba.shape[:2] + (1,), 255, dtype=rgba.dtype)
@@ -167,44 +258,45 @@ class Level:
             return rgba[y0:y0 + C.SCREEN_TILES_H, x0:x0 + C.SCREEN_TILES_W]
 
         keep = set(range(n_screens)) if include is None else set(include)
-        count = max(keep) + 1
-        ignored_all = set()
-        screens, wind, tl, tr = [], [], [], []
+        count = max(max(keep) + 1, n_screens)
+        unknown_all = set()
+        raw, wind, links = [], [], []
         for i in range(count):
             if i not in keep:
-                screens.append(np.zeros((C.SCREEN_TILES_H, C.SCREEN_TILES_W), np.int8))
+                raw.append(np.zeros((C.SCREEN_TILES_H, C.SCREEN_TILES_W), np.int8))
                 wind.append(0)
-                tl.append(-1)
-                tr.append(-1)
+                links.append((0, 0))
                 continue
-            codes, w, tele, ignored = _classify(screen_image(i))
-            ignored_all.update(ignored)
-            screens.append(resolve_slopes(codes))
-            wind.append(1 if w else 0)
-            left = right = -1
-            targets = [(x, t - 1) for x, t in tele if (t - 1) in keep]
-            dropped = sorted({t for _, t in tele if (t - 1) not in keep})
-            if dropped:
-                warnings.warn("screen %d: side teleport to excluded screen(s) %s dropped"
-                              % (i + 1, dropped))
-            if targets:
-                distinct = sorted(set(targets))
-                if len({t for _, t in distinct}) == 1:
-                    left = right = distinct[0][1]
-                else:
-                    left = min(distinct)[1]
-                    right = max(distinct)[1]
-            tl.append(left)
-            tr.append(right)
-        if ignored_all:
-            warnings.warn("ignored non-base-game blocks: %s" % ", ".join(sorted(ignored_all)))
+            codes, w, tele, unknown = _classify(screen_image(i))
+            unknown_all.update(unknown)
+            raw.append(codes)
+            wind.append(w)
+            links.append(tele)
+        if unknown_all:
+            warnings.warn("ignored unknown block colours: %s" % sorted(unknown_all))
+        # orient slopes on the stacked map (row 0 = top of the highest screen)
+        H = C.SCREEN_TILES_H
+        stacked = np.concatenate(raw[::-1], axis=0)
+        resolved = resolve_slopes(stacked)
+        screens = [resolved[(count - 1 - i) * H:(count - i) * H] for i in range(count)]
+        tl, tr = [], []
+        for i, (left, right) in enumerate(links):
+            out = []
+            for t in (left, right):
+                if t and (t - 1) not in keep:
+                    warnings.warn("screen %d: side teleport to excluded screen %d dropped"
+                                  % (i + 1, t))
+                    t = 0
+                out.append(t - 1 if t else -1)
+            tl.append(out[0])
+            tr.append(out[1])
         if goal is None:
             gx0, gy0, gx1, gy1 = BASE_GOAL_LOCAL
-            top = world_y_of_screen(n_screens - 1)
+            top = world_y_of_screen(min(n_screens, C.BASE_SCREENS) - 1)
             goal = (gx0, top + gy0, gx1, top + gy1)
-        names = [C.area_of_screen(i) if i < C.BASE_SCREENS else
-                 ("Imp Room (secret)" if i == IMP_ROOM else "Excluded") for i in range(count)]
-        return cls(screens, wind, tl, tr, goal=goal, start=start, name=name, area_names=names)
+        names = [C.area_of_screen(i) if i in keep else "Excluded" for i in range(count)]
+        return cls(screens, wind, tl, tr, goal=goal, start=start, name=name, area_names=names,
+                   endings=endings, content=content)
 
     @classmethod
     def from_png(cls, path, **kw):
@@ -233,16 +325,18 @@ class Level:
             goal = tuple(meta["goal"])
             start = tuple(meta["start"])
         return cls.from_png(BUILTIN_PNG, n_screens=C.BASE_SCREENS, name="builtin",
-                            goal=goal, start=start)
+                            goal=goal, start=start, content="builtin")
 
     @classmethod
-    def original(cls, game_dir=None):
-        """Original base-game geometry from the local Steam install.
+    def original(cls, game_dir=None, content="full"):
+        """Original geometry from the local Steam install (``Content/level.xnb``).
 
-        Loads screens 1-43 and the hidden Imp Room (screen 45, reached through
-        Bargainburg's side teleport). New Babe+ (46-100), Ghost of the Babe
-        (102-155) and Philosopher's Forest (156-160) are excluded, following
-        Content/gui/location_settings.xml."""
+        ``content="full"`` (default) loads the whole world exactly as the game
+        does: all 169 atlas screens, i.e. the base game (1-43), the Imp Room
+        (45), New Babe+ (46-100), Ghost of the Babe (102-154) and Philosopher's
+        Forest with the Hole (156-164), with every side teleport and all three
+        endings. ``content="base"`` keeps only screens 1-43, the Imp Room and
+        the normal ending."""
         from .xnb import find_level_xnb
 
         path = find_level_xnb(game_dir)
@@ -250,17 +344,26 @@ class Level:
             raise FileNotFoundError(
                 "Jump King's Content/level.xnb was not found. Install the game "
                 "through Steam (or pass game_dir=...).")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return cls.from_xnb(path, n_screens=C.BASE_SCREENS, include=BASE_GAME_SCREENS)
+        if content == "base":
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return cls.from_xnb(path, n_screens=C.BASE_SCREENS, include=BASE_GAME_SCREENS,
+                                    endings=(ENDING_NORMAL,), content="base")
+        if content != "full":
+            raise ValueError("content must be 'full' or 'base'")
+        return cls.from_xnb(path, n_screens=C.ATLAS_SCREENS, include=range(C.ATLAS_SCREENS),
+                            endings=ENDINGS, content="full")
 
     @classmethod
     def load(cls, source="auto"):
-        """``builtin``, ``original``, ``auto`` (original if installed) or a path."""
+        """``builtin``, ``original`` (full world), ``original-base``, ``auto``
+        (original if installed) or a path."""
         if source == "builtin":
             return cls.builtin()
         if source == "original":
             return cls.original()
+        if source in ("original-base", "base"):
+            return cls.original(content="base")
         if source == "auto":
             from .xnb import find_level_xnb
 
@@ -274,16 +377,20 @@ class Level:
             return cls.from_xnb(source)
         return cls.from_png(source)
 
+    def ending(self, name):
+        """The ``Ending`` called ``name`` (normal, new_babe_plus, ghost_of_the_babe)."""
+        for e in self.endings:
+            if e.name == name:
+                return e
+        raise KeyError("level %r has no ending %r" % (self.name, name))
+
     def to_atlas(self):
         """Encode back into a 780x585 RGBA atlas (round-trips through from_atlas)."""
         cols = C.ATLAS_COLS
         atlas = np.zeros((cols * C.SCREEN_TILES_H, cols * C.SCREEN_TILES_W, 4), dtype=np.uint8)
-        colour = {
-            P.T_SOLID: RGB_SOLID, P.T_ICE: RGB_ICE, P.T_SNOW: RGB_SNOW,
-            P.T_NOWIND: RGB_NOWIND, P.T_FAKE: RGB_FAKE,
-            P.T_SLOPE_TL: RGB_SLOPE, P.T_SLOPE_TR: RGB_SLOPE,
-            P.T_SLOPE_BL: RGB_SLOPE, P.T_SLOPE_BR: RGB_SLOPE,
-        }
+        colour = {code: rgb for rgb, code in BLOCK_COLOURS.items()}
+        for code in (P.T_SLOPE_TL, P.T_SLOPE_TR, P.T_SLOPE_BL, P.T_SLOPE_BR, P.T_SLOPE_NONE):
+            colour[code] = RGB_SLOPE
         for i, sc in enumerate(self.screen_tiles):
             x0, y0 = screen_origin_in_atlas(i)
             view = atlas[y0:y0 + C.SCREEN_TILES_H, x0:x0 + C.SCREEN_TILES_W]
@@ -293,24 +400,27 @@ class Level:
                 view[m, 3] = 255
             free = list(zip(*np.nonzero(sc == P.T_EMPTY)))
             markers = []
-            if self.wind[i]:
-                markers.append(RGB_WIND)
-            if self.tp_left[i] >= 0 or self.tp_right[i] >= 0:
-                if self.tp_left[i] == self.tp_right[i]:
-                    markers.append((self.tp_left[i] + 1, 0, 255))
-                else:
-                    markers.append(("L", self.tp_left[i] + 1))
-                    markers.append(("R", self.tp_right[i] + 1))
-            for m in markers:
-                if m[0] == "L":
+            w = int(self.wind[i])
+            if w == 1:
+                markers.append(("A", RGB_WIND))
+            elif w >= 2:
+                k = w - 2
+                markers.append(("A", (192 + 16 * (k // 16) + k % 16, 255, 0)))
+            tl, tr = int(self.tp_left[i]), int(self.tp_right[i])
+            if tl >= 0 and tl == tr:
+                markers.append(("L", (tl + 1, 0, 255)))
+            else:
+                if tl >= 0:
+                    markers.append(("L", (tl + 1, 0, 255)))
+                if tr >= 0:
+                    markers.append(("R", (tr + 1, 0, 255)))
+            for side, rgb in markers:
+                if side == "L":
                     cand = [p for p in free if p[1] < 30]
-                    rgb = (m[1], 0, 255)
-                elif m[0] == "R":
+                elif side == "R":
                     cand = [p for p in free if p[1] >= 30][::-1]
-                    rgb = (m[1], 0, 255)
                 else:
                     cand = free
-                    rgb = m
                 if not cand:
                     raise ValueError("no free pixel for a marker on screen %d" % (i + 1))
                 yy, xx = cand[0]
@@ -325,14 +435,20 @@ class Level:
         Image.fromarray(self.to_atlas(), "RGBA").save(path)
 
     # ------------------------------------------------------------- helpers
-    def params(self, splat_time=C.SPLAT_TIME, wind_offset=0.0, wind_scale=1.0):
+    def params(self, splat_time=C.SPLAT_TIME, wind_offset=0.0, wind_scale=1.0,
+               legacy_teleport=False):
         p = np.zeros(P.PARAM_SIZE, dtype=np.float64)
+        p[P.P_LEGACY_TELEPORT] = 1.0 if legacy_teleport else 0.0
         p[P.P_SPLAT_TIME] = splat_time
         p[P.P_GOAL_X0], p[P.P_GOAL_Y0], p[P.P_GOAL_X1], p[P.P_GOAL_Y1] = self.goal
         p[P.P_WIND_OFFSET] = wind_offset
         p[P.P_N_SCREENS] = self.n_screens
         p[P.P_OFFSET_Y] = self.offset_y
         p[P.P_WIND_SCALE] = wind_scale
+        p[P.P_N_ENDINGS] = len(self.endings)
+        for k, e in enumerate(self.endings[:P.MAX_ENDINGS]):
+            b = P.P_ENDINGS + P.ENDING_STRIDE * k
+            p[b:b + P.ENDING_STRIDE] = e.as_tuple()
         return p
 
     def screen_grid(self, index):
@@ -353,7 +469,18 @@ class Level:
     def collides(self, hx, hy):
         return bool(P.collide(self.tiles, self.offset_y, int(hx), int(hy)) & P.CI_COLL)
 
+    def teleport_target(self, screen, exit_left):
+        """0-based screen a side exit of ``screen`` leads to (-1: none)."""
+        tl, tr = int(self.tp_left[screen]), int(self.tp_right[screen])
+        if tl >= 0 and tr >= 0:
+            return tl if exit_left else tr
+        return tl if tl >= 0 else tr
+
+    def screens_with(self, code):
+        """1-based screens containing tile ``code``."""
+        return [i + 1 for i in range(self.n_screens) if (self.screen_tiles[i] == code).any()]
+
     def __repr__(self):
         return "Level(%r, screens=%d, wind=%d, teleports=%d)" % (
-            self.name, self.n_screens, int(self.wind.sum()),
+            self.name, self.n_screens, int((self.wind > 0).sum()),
             int(((self.tp_left >= 0) | (self.tp_right >= 0)).sum()))

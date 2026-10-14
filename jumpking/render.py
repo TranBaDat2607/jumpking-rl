@@ -20,10 +20,35 @@ AREA_COLOURS = {
     "Chapel Perilous": ((50, 30, 40), (100, 60, 70), (88, 70, 76), (170, 140, 120)),
     "Blue Ruin": ((20, 40, 80), (50, 80, 130), (60, 80, 120), (120, 160, 210)),
     "The Tower": ((20, 16, 40), (60, 40, 80), (70, 60, 70), (160, 130, 90)),
+    # secret rooms and New Babe+
+    "Imp Room": ((40, 20, 20), (80, 40, 30), (70, 50, 40), (150, 90, 60)),
+    "New Babe+ Entrance": ((40, 20, 20), (80, 40, 30), (70, 50, 40), (150, 90, 60)),
+    "Brightcrown Woods": ((90, 110, 140), (200, 210, 220), (70, 60, 50), (230, 235, 240)),
+    "Colossal Dungeon": ((20, 30, 40), (50, 70, 90), (70, 80, 90), (150, 200, 230)),
+    "False King's Castle": ((40, 36, 56), (80, 70, 96), (96, 90, 100), (160, 150, 160)),
+    "Underburg": ((60, 50, 40), (120, 100, 80), (100, 80, 60), (190, 150, 100)),
+    "Lost Frontier": ((110, 150, 190), (190, 200, 210), (90, 84, 70), (130, 160, 90)),
+    "Hidden Kingdom": ((30, 50, 40), (70, 100, 80), (60, 70, 60), (120, 170, 120)),
+    "Black Sanctum": ((10, 10, 16), (30, 30, 46), (40, 40, 50), (100, 100, 130)),
+    "Deep Ruin": ((10, 40, 70), (30, 80, 120), (50, 70, 90), (110, 160, 200)),
+    "The Dark Tower": ((16, 10, 24), (46, 30, 60), (60, 50, 66), (140, 110, 160)),
+    # Ghost of the Babe
+    "Philosopher's Forest": ((30, 50, 30), (80, 110, 60), (60, 50, 36), (120, 170, 80)),
+    "Hole": ((10, 10, 10), (30, 26, 24), (50, 44, 40), (90, 80, 70)),
+    "Bog": ((40, 60, 60), (90, 120, 110), (60, 70, 50), (150, 190, 170)),
+    "Moulding Manor": ((40, 40, 30), (90, 90, 60), (80, 76, 56), (150, 160, 90)),
+    "Bugstalk": ((60, 90, 70), (140, 170, 120), (70, 90, 60), (180, 220, 160)),
+    "House of Nine Lives": ((50, 30, 40), (110, 70, 80), (90, 66, 70), (180, 130, 120)),
+    "The Phantom Tower": ((30, 30, 50), (80, 80, 120), (70, 70, 90), (170, 170, 220)),
+    "Halted Ruin": ((30, 50, 70), (80, 110, 140), (70, 80, 90), (150, 180, 200)),
+    "Tower of Antumbra": ((60, 40, 20), (160, 120, 70), (110, 80, 50), (220, 180, 110)),
     "Unknown": ((30, 30, 30), (60, 60, 60), (100, 100, 100), (160, 160, 160)),
 }
 ICE = (150, 220, 255)
 SNOW = (245, 245, 250)
+SAND = (214, 168, 92)
+WATER = (40, 110, 200)
+QUARK = (182, 255, 0)
 NOWIND = None
 PLAYER = (200, 40, 40)
 PLAYER_CHARGE = (255, 200, 40)
@@ -55,7 +80,8 @@ class Renderer:
         # tile layer at 8x8
         tile_rgb = np.zeros((C.SCREEN_TILES_H, C.SCREEN_TILES_W, 3), np.uint8)
         mask = np.zeros((C.SCREEN_TILES_H, C.SCREEN_TILES_W), bool)
-        for code, col in ((P.T_SOLID, solid), (P.T_ICE, ICE), (P.T_SNOW, SNOW)):
+        for code, col in ((P.T_SOLID, solid), (P.T_ICE, ICE), (P.T_SNOW, SNOW),
+                          (P.T_SAND, SAND)):
             m = grid == code
             tile_rgb[m] = col
             mask |= m
@@ -83,14 +109,32 @@ class Renderer:
         for r, c in zip(*np.nonzero(grid == P.T_NOWIND)):
             cell = img[r * 8:r * 8 + 8, c * 8:c * 8 + 8]
             cell[:] = (cell.astype(np.int32) * 3 // 4 + 64).astype(np.uint8)
-        # goal (babe)
-        gx0, gy0, gx1, gy1 = lvl.goal
+        # water: translucent blue
+        for r, c in zip(*np.nonzero(grid == P.T_WATER)):
+            cell = img[r * 8:r * 8 + 8, c * 8:c * 8 + 8]
+            cell[:] = ((cell.astype(np.int32) + np.array(WATER) * 2) // 3).astype(np.uint8)
+        # quark: small marker
+        for r, c in zip(*np.nonzero(grid == P.T_QUARK)):
+            img[r * 8 + 3:r * 8 + 5, c * 8 + 3:c * 8 + 5] = QUARK
         top_y = -C.SCREEN_H * index
-        if top_y <= gy0 < top_y + C.SCREEN_H:
-            x0, x1 = int(gx0), int(gx1)
-            y0, y1 = int(gy0 - top_y), int(gy1 - top_y)
-            img[max(0, y0):y1, max(0, x0):x1] = BABE
-            img[max(0, y0):y0 + 4, max(0, x0):x1] = CROWN
+        if lvl.endings:
+            # babes: a marker past the line where reaching her ends the game
+            for e in lvl.endings:
+                if e.screen != index:
+                    continue
+                x = int(e.x) + (8 if e.side > 0 else -24)
+                y1 = C.SCREEN_H if e.max_y > 1e17 else int(e.max_y - top_y) + 13
+                y1 = min(C.SCREEN_H, y1)
+                y0 = max(0, y1 - 26)
+                img[y0:y1, max(0, x):max(0, x + 16)] = BABE
+                img[y0:y0 + 4, max(0, x):max(0, x + 16)] = CROWN
+        else:
+            gx0, gy0, gx1, gy1 = lvl.goal
+            if top_y <= gy0 < top_y + C.SCREEN_H:
+                x0, x1 = int(gx0), int(gx1)
+                y0, y1 = int(gy0 - top_y), int(gy1 - top_y)
+                img[max(0, y0):y1, max(0, x0):x1] = BABE
+                img[max(0, y0):y0 + 4, max(0, x0):x1] = CROWN
         self._cache[index] = img
         return img
 

@@ -49,9 +49,22 @@ SPLAT_TIME = _f32(0.5)    # PlayerValues.get_SPLAT_TIME in JumpKing.exe
 SNOW_MIN_POWER = _f32(0.2)
 SNOW_BOOST_POWER = _f32(0.3)
 
+# --- DLC blocks (JumpKing.PlayerValues, Sand/WaterBlockBehaviour) ----------
+SAND_FALL_SPEED = _f32(0.75)        # max sinking speed inside sand
+SAND_MOVE_MULTIPLIER = _f32(0.25)   # horizontal movement inside sand
+SAND_JUMP_MULTIPLIER = _f32(0.5)    # upward movement inside sand
+WATER_MULTIPLIER = _f32(0.5)        # movement, gravity and jump charge in water
+
+# --- items ----------------------------------------------------------------
+# Giant Boots: on landing the body freezes for a 0.05 s pause, then a 0.15 s
+# screen shake follows (PlayerEntity.MakeBT); walking is disabled (Walk).
+BOOTS_FREEZE_TIME = _f32(0.05)
+BOOTS_SHAKE_TIME = _f32(0.15)
+
 # --- wind -----------------------------------------------------------------
 WIND_PHASE_RATE = _f32(0.48124886)   # rad / s
 WIND_STRENGTH = _f32(0.1)            # px / tick^2 at full wave
+WIND_INTENSITY_STEP = _f32(0.0125)   # per intensity level of (R, 255, 0) wind
 
 # --- start position (screen 1, from the JumpKingTAS base-game route) --------
 START_X = 231.0
@@ -74,14 +87,44 @@ AREAS = (
     ("The Tower", 40, 43),
 )
 
+# The DLC areas of the shared 169-screen world (Content/gui/location_settings.xml;
+# the section names of the community TAS routes for the screens in between).
+AREAS_SECRET = (
+    ("Imp Room", 45, 45),
+    ("New Babe+ Entrance", 46, 46),
+)
+AREAS_NBP = (
+    ("Brightcrown Woods", 47, 52),
+    ("Colossal Dungeon", 53, 59),
+    ("False King's Castle", 60, 63),
+    ("Underburg", 64, 70),
+    ("Lost Frontier", 71, 77),
+    ("Hidden Kingdom", 78, 83),
+    ("Black Sanctum", 84, 89),
+    ("Deep Ruin", 90, 94),
+    ("The Dark Tower", 95, 100),
+)
+AREAS_GHOST = (
+    ("Bog", 102, 108),
+    ("Moulding Manor", 109, 116),
+    ("Bugstalk", 117, 123),
+    ("House of Nine Lives", 124, 130),
+    ("The Phantom Tower", 131, 139),
+    ("Halted Ruin", 140, 147),
+    ("Tower of Antumbra", 148, 154),
+    ("Philosopher's Forest", 156, 160),
+    ("Hole", 161, 164),
+)
+ALL_AREAS = AREAS + AREAS_SECRET + AREAS_NBP + AREAS_GHOST
+
 
 def area_of_screen(screen_index):
     """Area name for a 0-based screen index."""
     n = screen_index + 1
-    for name, a, b in AREAS:
+    for name, a, b in ALL_AREAS:
         if a <= n <= b:
             return name
-    return "Unknown"
+    return "Empty"
 
 
 # --- optional overrides --------------------------------------------------

@@ -101,15 +101,24 @@ def test_goal_terminates_episode():
     env = JumpKingEnv(goal_bonus=10.0)
     env.reset(seed=0)
     s = env.get_state()
-    x0, y0, x1, y1 = env.level.goal
-    feet = int(y1)
-    # stand next to the babe on whichever side has floor, then walk to her
-    for px, d in ((x0 - 24, 1), (x1 + 6, -1)):
-        if env.level.collides(int(px), feet - 26 + 1) and not env.level.collides(int(px), feet - 26):
-            break
+    if env.level.endings:
+        # stand where the normal ending triggers (EndingManager.CheckWin)
+        e = env.level.ending("normal")
+        spots = [p for p in env.game.spawn_points(e.screen, stride=1)
+                 if int(p[0]) + 9 >= e.x]
+        px, py = spots[0]
+        d = 1
+        s[P.S_SCREEN] = e.screen
+    else:
+        x0, y0, x1, y1 = env.level.goal
+        py = int(y1) - 26
+        # stand next to the babe on whichever side has floor, then walk to her
+        for px, d in ((x0 - 24, 1), (x1 + 6, -1)):
+            if env.level.collides(int(px), py + 1) and not env.level.collides(int(px), py):
+                break
+        s[P.S_SCREEN] = env.level.n_screens - 1
     s[P.S_X] = px
-    s[P.S_Y] = feet - 26
-    s[P.S_SCREEN] = env.level.n_screens - 1
+    s[P.S_Y] = py
     s[P.S_ON_GROUND] = 1
     env.set_state(s)
     term = False
@@ -117,8 +126,27 @@ def test_goal_terminates_episode():
         _, r, term, trunc, info = env.step(env.macro_index("walk", d, 32))
         if term:
             break
-    assert term and info["goal"]
+    assert term and info["goal"] and info["success"]
     assert r >= 10.0
+
+
+def test_other_babe_ends_the_game_without_success():
+    from jumpking.level import Level
+
+    try:
+        world = Level.original()
+    except FileNotFoundError:
+        pytest.skip("Jump King is not installed")
+    env = JumpKingEnv(level=world, ending="new_babe_plus", goal_bonus=10.0)
+    env.reset(seed=0)
+    s = env.get_state()
+    e = world.ending("normal")
+    px, py = [p for p in env.game.spawn_points(e.screen, stride=1) if int(p[0]) + 9 >= e.x][0]
+    s[P.S_X], s[P.S_Y], s[P.S_SCREEN], s[P.S_ON_GROUND] = px, py, e.screen, 1
+    env.set_state(s)
+    _, r, term, _, info = env.step(env.macro_index("walk", 1, 4))
+    assert term and info["goal"] and info["ending"] == 1 and not info["success"]
+    assert r < 10.0
 
 
 def test_vector_env():
